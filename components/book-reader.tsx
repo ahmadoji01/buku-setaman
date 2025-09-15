@@ -1,0 +1,391 @@
+"use client"
+
+import { useState, useEffect, useRef } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Slider } from "@/components/ui/slider"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  Pause,
+  Bookmark,
+  BookmarkCheck,
+  Settings,
+  Volume2,
+  VolumeX,
+} from "lucide-react"
+import type { Story, Language, BookProgress, StoryPage } from "@/lib/types"
+import { cn } from "@/lib/utils"
+
+interface BookReaderProps {
+  story: Story
+  onProgressUpdate?: (progress: BookProgress) => void
+}
+
+export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
+  const [currentPage, setCurrentPage] = useState(0)
+  const [selectedLanguage, setSelectedLanguage] = useState<Language>("indonesian")
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [fontSize, setFontSize] = useState(16)
+  const [fontFamily, setFontFamily] = useState("sans")
+  const [bookmarks, setBookmarks] = useState<number[]>([])
+  const [isPageTurning, setIsPageTurning] = useState(false)
+  const [highlightedWord, setHighlightedWord] = useState<number>(-1)
+
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  const getStoryPages = (): StoryPage[] => {
+    const content = story.content[selectedLanguage]
+
+    // Handle new StoryPage array structure
+    if (Array.isArray(content)) {
+      return content
+    }
+
+    // Fallback for old string format - convert to StoryPage array
+    if (typeof content === "string") {
+      const sentences = content.split(". ").filter(Boolean)
+      const pages: StoryPage[] = []
+
+      // Group sentences into pages (2-3 sentences per page)
+      for (let i = 0; i < sentences.length; i += 2) {
+        const pageContent = sentences.slice(i, i + 2).join(". ") + (i + 2 < sentences.length ? "." : "")
+        pages.push({
+          pageNumber: Math.floor(i / 2) + 1,
+          text: pageContent,
+          illustration: story.illustrations[Math.floor(i / 2)] || story.illustrations[0],
+        })
+      }
+
+      return pages.length > 0
+        ? pages
+        : [
+            {
+              pageNumber: 1,
+              text: content,
+              illustration: story.illustrations[0],
+            },
+          ]
+    }
+
+    // Fallback to Indonesian if selected language not available
+    const fallbackContent = story.content.indonesian
+    if (Array.isArray(fallbackContent)) {
+      return fallbackContent
+    }
+
+    return [
+      {
+        pageNumber: 1,
+        text: typeof fallbackContent === "string" ? fallbackContent : "",
+        illustration: story.illustrations[0],
+      },
+    ]
+  }
+
+  const pages = getStoryPages()
+  const totalPages = pages.length
+
+  // Handle page navigation
+  const goToNextPage = () => {
+    if (currentPage < totalPages - 1) {
+      setIsPageTurning(true)
+      setTimeout(() => {
+        setCurrentPage(currentPage + 1)
+        setIsPageTurning(false)
+      }, 300)
+    }
+  }
+
+  const goToPreviousPage = () => {
+    if (currentPage > 0) {
+      setIsPageTurning(true)
+      setTimeout(() => {
+        setCurrentPage(currentPage - 1)
+        setIsPageTurning(false)
+      }, 300)
+    }
+  }
+
+  // Handle audio playback
+  const toggleAudio = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause()
+      } else {
+        audioRef.current.play()
+      }
+      setIsPlaying(!isPlaying)
+    }
+  }
+
+  const toggleMute = () => {
+    if (audioRef.current) {
+      audioRef.current.muted = !isMuted
+      setIsMuted(!isMuted)
+    }
+  }
+
+  // Handle bookmarks
+  const toggleBookmark = () => {
+    if (bookmarks.includes(currentPage)) {
+      setBookmarks(bookmarks.filter((page) => page !== currentPage))
+    } else {
+      setBookmarks([...bookmarks, currentPage])
+    }
+  }
+
+  // Simulate read-along highlighting
+  useEffect(() => {
+    if (isPlaying && pages[currentPage]) {
+      const words = pages[currentPage].text.split(" ") || []
+      let wordIndex = 0
+
+      const interval = setInterval(() => {
+        if (wordIndex < words.length) {
+          setHighlightedWord(wordIndex)
+          wordIndex++
+        } else {
+          setHighlightedWord(-1)
+          clearInterval(interval)
+        }
+      }, 500) // Highlight each word for 500ms
+
+      return () => clearInterval(interval)
+    } else {
+      setHighlightedWord(-1)
+    }
+  }, [isPlaying, currentPage, pages])
+
+  // Update progress
+  useEffect(() => {
+    if (onProgressUpdate) {
+      onProgressUpdate({
+        userId: "current-user", // This would come from auth context
+        storyId: story.id,
+        currentPage,
+        totalPages,
+        isCompleted: currentPage === totalPages - 1,
+        bookmarks,
+        lastReadAt: new Date(),
+      })
+    }
+  }, [currentPage, totalPages, bookmarks, story.id, onProgressUpdate])
+
+  // Language options
+  const availableLanguages = Object.keys(story.content) as Language[]
+  const languageLabels = {
+    indonesian: "Bahasa Indonesia",
+    sundanese: "Basa Sunda",
+    english: "English",
+  }
+
+  const currentPageData = pages[currentPage]
+  const currentPageText = currentPageData?.text || ""
+  const currentPageIllustration =
+    currentPageData?.illustration || story.illustrations[currentPage] || story.illustrations[0]
+
+  return (
+    <div className="max-w-4xl mx-auto p-4 space-y-6">
+      {/* Audio element */}
+      <audio
+        ref={audioRef}
+        src={story.audioFiles[selectedLanguage]}
+        onEnded={() => setIsPlaying(false)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+      />
+
+      {/* Controls Bar */}
+      <div className="flex items-center justify-between bg-card p-4 rounded-lg border">
+        <div className="flex items-center space-x-4">
+          {/* Language Selector */}
+          <Select value={selectedLanguage} onValueChange={(value: Language) => setSelectedLanguage(value)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableLanguages.map((lang) => (
+                <SelectItem key={lang} value={lang}>
+                  {languageLabels[lang]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Audio Controls */}
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={toggleAudio} disabled={!story.audioFiles[selectedLanguage]}>
+              {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            </Button>
+            <Button variant="outline" size="sm" onClick={toggleMute}>
+              {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-4">
+          {/* Bookmark */}
+          <Button variant="outline" size="sm" onClick={toggleBookmark}>
+            {bookmarks.includes(currentPage) ? (
+              <BookmarkCheck className="h-4 w-4 text-primary" />
+            ) : (
+              <Bookmark className="h-4 w-4" />
+            )}
+          </Button>
+
+          {/* Settings */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 p-4">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Ukuran Teks</label>
+                  <Slider
+                    value={[fontSize]}
+                    onValueChange={(value) => setFontSize(value[0])}
+                    min={12}
+                    max={24}
+                    step={1}
+                    className="w-full"
+                  />
+                  <div className="text-xs text-muted-foreground mt-1">{fontSize}px</div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Font</label>
+                  <Select value={fontFamily} onValueChange={setFontFamily}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sans">Sans Serif</SelectItem>
+                      <SelectItem value="serif">Serif</SelectItem>
+                      <SelectItem value="mono">Monospace</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Book Reader */}
+      <Card className="min-h-[500px] relative overflow-hidden">
+        <CardContent className="p-8">
+          {/* Story Title */}
+          <h1 className="text-2xl font-bold text-center mb-8 text-foreground">{story.title}</h1>
+
+          {/* Book Pages */}
+          <div className="relative">
+            <div
+              className={cn(
+                "transition-all duration-300 ease-in-out",
+                isPageTurning && "transform scale-95 opacity-50",
+              )}
+            >
+              {/* Story Illustration */}
+              {currentPageIllustration && (
+                <div className="mb-6 text-center">
+                  <img
+                    src={currentPageIllustration || "/placeholder.svg"}
+                    alt={`Ilustrasi halaman ${currentPage + 1}`}
+                    className="max-w-full h-64 object-contain mx-auto rounded-lg"
+                  />
+                </div>
+              )}
+
+              {/* Story Text */}
+              <div
+                className={cn(
+                  "text-center leading-relaxed",
+                  fontFamily === "serif" && "font-serif",
+                  fontFamily === "mono" && "font-mono",
+                  fontFamily === "sans" && "font-sans",
+                )}
+                style={{ fontSize: `${fontSize}px` }}
+              >
+                {currentPageText.split(" ").map((word, index) => (
+                  <span
+                    key={index}
+                    className={cn(
+                      "transition-colors duration-200",
+                      highlightedWord === index && "bg-primary/20 text-primary font-medium",
+                    )}
+                  >
+                    {word}{" "}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <div className="flex items-center justify-between mt-8">
+            <Button
+              variant="outline"
+              onClick={goToPreviousPage}
+              disabled={currentPage === 0}
+              className="flex items-center space-x-2 bg-transparent"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span>Sebelumnya</span>
+            </Button>
+
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-muted-foreground">
+                Halaman {currentPage + 1} dari {totalPages}
+              </span>
+              <div className="w-32 bg-muted rounded-full h-2">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${((currentPage + 1) / totalPages) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={goToNextPage}
+              disabled={currentPage === totalPages - 1}
+              className="flex items-center space-x-2 bg-transparent"
+            >
+              <span>Selanjutnya</span>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Bookmarks Panel */}
+      {bookmarks.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <h3 className="font-medium mb-3">Bookmark Tersimpan</h3>
+            <div className="flex flex-wrap gap-2">
+              {bookmarks.map((pageNum) => (
+                <Button
+                  key={pageNum}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(pageNum)}
+                  className="text-xs"
+                >
+                  Halaman {pageNum + 1}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
