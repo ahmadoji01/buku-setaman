@@ -94,8 +94,11 @@ export default function LoginPage() {
 
             <div className="mt-4 text-center text-sm text-muted-foreground">
               <p>Demo Login:</p>
-              <p>Email: guru@example.com</p>
-              <p>Password: password123</p>
+              <p>Email: admin@bukusetaman.com</p>
+              <p>Password: admin123</p>
+              <p className="mt-2 text-xs">or</p>
+              <p>Email: sari@teacher.com</p>
+              <p>Password: teacher123</p>
             </div>
           </CardContent>
         </Card>

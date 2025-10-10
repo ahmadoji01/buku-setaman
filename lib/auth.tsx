@@ -2,7 +2,6 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import type { User, UserRole } from "./types"
-import { getCurrentUser, getUserById } from "./mock-data"
 
 interface AuthContextType {
   user: User | null
@@ -22,30 +21,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Check for stored user session
     const storedUserId = localStorage.getItem("userId")
     if (storedUserId) {
-      const foundUser = getUserById(storedUserId)
-      if (foundUser) {
-        setUser(foundUser)
-        setIsAuthenticated(true)
-      }
+      // Check if user is still authenticated via API
+      fetch('/api/auth/me')
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.user) {
+            setUser(data.user)
+            setIsAuthenticated(true)
+          } else {
+            // Clear invalid session
+            localStorage.removeItem("userId")
+          }
+        })
+        .catch((error) => {
+          console.error('Session check error:', error)
+          localStorage.removeItem("userId")
+        })
     }
   }, [])
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Simple mock authentication
-    const foundUser = getCurrentUser() // For demo, always return teacher
-    if (foundUser) {
-      setUser(foundUser)
-      setIsAuthenticated(true)
-      localStorage.setItem("userId", foundUser.id)
-      return true
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setUser(data.user)
+        setIsAuthenticated(true)
+        localStorage.setItem("userId", data.user.email) // Store email for session
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.error('Login error:', error)
+      return false
     }
-    return false
   }
 
   const logout = () => {
-    setUser(null)
-    setIsAuthenticated(false)
-    localStorage.removeItem("userId")
+    // Call logout API to clear server-side session
+    fetch('/api/auth/logout', { method: 'POST' })
+      .catch((error) => console.error('Logout error:', error))
+      .finally(() => {
+        setUser(null)
+        setIsAuthenticated(false)
+        localStorage.removeItem("userId")
+      })
   }
 
   const hasRole = (role: UserRole): boolean => {

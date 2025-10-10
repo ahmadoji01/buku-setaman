@@ -20,6 +20,7 @@ const setupDatabase = () => {
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           email TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL,
           role TEXT CHECK(role IN ('admin', 'teacher', 'public')) NOT NULL,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -121,13 +122,13 @@ const setupDatabase = () => {
       
       // Insert users
       const userStmt = db.prepare(`
-        INSERT INTO users (id, name, email, role, created_at, updated_at) 
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, name, email, password, role, created_at, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
       
-      userStmt.run('1', 'Admin User', 'admin@bukusetaman.com', 'admin', '2024-01-01 00:00:00', '2024-01-01 00:00:00');
-      userStmt.run('2', 'Ibu Sari', 'sari@teacher.com', 'teacher', '2024-01-15 00:00:00', '2024-01-15 00:00:00');
-      userStmt.run('3', 'Pak Budi', 'budi@teacher.com', 'teacher', '2024-01-20 00:00:00', '2024-01-20 00:00:00');
+      userStmt.run('1', 'Admin User', 'admin@bukusetaman.com', 'admin123', 'admin', '2024-01-01 00:00:00', '2024-01-01 00:00:00');
+      userStmt.run('2', 'Ibu Sari', 'sari@teacher.com', 'teacher123', 'teacher', '2024-01-15 00:00:00', '2024-01-15 00:00:00');
+      userStmt.run('3', 'Pak Budi', 'budi@teacher.com', 'teacher123', 'teacher', '2024-01-20 00:00:00', '2024-01-20 00:00:00');
       
       // Insert stories
       const storyStmt = db.prepare(`
