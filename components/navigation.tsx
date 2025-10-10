@@ -2,8 +2,8 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useState } from "react"
 import { useAuth } from "@/lib/auth"
-import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +15,7 @@ import { User, BookOpen, Settings, LogOut, Users, GraduationCap } from "lucide-r
 
 export function Navigation() {
   const { user, logout, hasRole } = useAuth()
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
   return (
     <nav className="bg-card border-b border-border">
@@ -62,16 +63,30 @@ export function Navigation() {
           </div>
 
           {/* User Menu */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-4 relative">
             {user ? (
-              <DropdownMenu>
+              <DropdownMenu onOpenChange={setIsDropdownOpen}>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="flex items-center space-x-2">
+                  <button
+                    className="flex items-center space-x-2 px-3 py-2 rounded-md hover:bg-accent transition-colors"
+                    type="button"
+                  >
                     <User className="h-4 w-4" />
                     <span className="hidden sm:inline">{user.name}</span>
-                  </Button>
+                  </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+
+                {/* Portal to ensure proper rendering */}
+                <DropdownMenuContent
+                  align="end"
+                  className="w-56 z-[9999] min-w-[200px]"
+                  sideOffset={8}
+                  avoidCollisions={true}
+                >
+                  {/* Debug indicator */}
+                  <div className="px-2 py-1 text-xs text-muted-foreground border-b">
+                    Dropdown {isDropdownOpen ? 'OPEN' : 'CLOSED'}
+                  </div>
                   <div className="px-2 py-1.5 text-sm font-medium">{user.name}</div>
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">
                     {user.role === "admin" ? "Administrator" : user.role === "teacher" ? "Guru" : "Pengguna"}
@@ -120,9 +135,9 @@ export function Navigation() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button asChild>
-                <Link href="/login">Masuk</Link>
-              </Button>
+              <button className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
+                <Link href="/login" className="text-primary-foreground">Masuk</Link>
+              </button>
             )}
           </div>
         </div>
