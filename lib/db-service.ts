@@ -73,6 +73,30 @@ class DatabaseService {
   close(): void {
     this.db.close();
   }
+
+  // Public methods for API routes
+  prepare(sql: string): Database.Statement {
+    return this.db.prepare(sql);
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+  }
+
+  all<T = unknown>(sql: string, params?: readonly any[]): T[] {
+    const stmt = this.db.prepare(sql);
+    return params ? stmt.all(params) as T[] : stmt.all() as T[];
+  }
+
+  get<T = unknown>(sql: string, params?: readonly any[]): T | undefined {
+    const stmt = this.db.prepare(sql);
+    return params ? stmt.get(params) as T | undefined : stmt.get() as T | undefined;
+  }
+
+  run(sql: string, params?: readonly any[]): Database.RunResult {
+    const stmt = this.db.prepare(sql);
+    return params ? stmt.run(params) : stmt.run();
+  }
 }
 
 // Singleton instance

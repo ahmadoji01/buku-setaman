@@ -2,7 +2,6 @@ import { notFound } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Share2 } from "lucide-react"
 import Link from "next/link"
-import { mockStories } from "@/lib/mock-data"
 import { StoryReaderClient } from "@/components/story-reader-client"
 
 interface StoryPageProps {
@@ -11,8 +10,18 @@ interface StoryPageProps {
   }
 }
 
-export default function StoryPage({ params }: StoryPageProps) {
-  const story = mockStories.find((s) => s.id === params.id)
+export default async function StoryPage({ params }: StoryPageProps) {
+  // Fetch the story from the API
+  const res = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/stories/${params.id}`, {
+    cache: 'no-store' // Ensure fresh data
+  })
+
+  if (!res.ok) {
+    notFound()
+  }
+
+  const data = await res.json()
+  const story = data.story
 
   if (!story) {
     notFound()
@@ -53,10 +62,10 @@ export default function StoryPage({ params }: StoryPageProps) {
               <strong className="text-foreground">Penulis:</strong> {story.authorName}
             </div>
             <div>
-              <strong className="text-foreground">Tanggal Dibuat:</strong> {story.createdAt.toLocaleDateString("id-ID")}
+              <strong className="text-foreground">Tanggal Dibuat:</strong> {new Date(story.createdAt).toLocaleDateString("id-ID")}
             </div>
             <div>
-              <strong className="text-foreground">Bahasa Tersedia:</strong> {Object.keys(story.content).join(", ")}
+              <strong className="text-foreground">Bahasa Tersedia:</strong> {Object.keys(story.content || {}).join(", ")}
             </div>
             <div>
               <strong className="text-foreground">Status:</strong> {story.isPublished ? "Dipublikasikan" : "Draft"}

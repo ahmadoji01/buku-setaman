@@ -3,18 +3,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { BookOpen, Clock, User } from "lucide-react"
-import { getPublishedStories } from "@/lib/mock-data"
 
-export default function StoriesPage() {
-  const stories = getPublishedStories()
+interface Story {
+  id: string
+  title: string
+  content: any
+  authorId: string
+  authorName: string
+  isPublished: boolean
+  createdAt: Date
+  updatedAt: Date
+  illustrations?: string[]
+}
 
-  const getStoryPreview = (story: any) => {
-    const content = story.content.indonesian
+export default async function StoriesPage() {
+  // Fetch published stories from the API
+  const res = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/stories?published=true`, {
+    cache: 'no-store' // Ensure fresh data
+  })
+
+  const data = await res.json()
+  const stories: Story[] = data.stories || []
+
+  const getStoryPreview = (story: Story) => {
+    const content = story.content?.indonesian
     if (Array.isArray(content)) {
       // New format: array of StoryPage objects
       return (
         content
-          .map((page) => page.text)
+          .map((page: any) => page.text)
           .join(" ")
           .substring(0, 120) + "..."
       )
@@ -37,7 +54,7 @@ export default function StoriesPage() {
           <Card key={story.id} className="overflow-hidden hover:shadow-lg transition-shadow group">
             <div className="aspect-video bg-muted relative overflow-hidden">
               <img
-                src={story.illustrations[0] || "/placeholder.svg"}
+                src={story.illustrations?.[0] || "/placeholder.svg"}
                 alt={story.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               />
@@ -58,7 +75,7 @@ export default function StoriesPage() {
                 </span>
                 <span className="flex items-center">
                   <Clock className="h-3 w-3 mr-1" />
-                  {story.createdAt.toLocaleDateString("id-ID")}
+                  {new Date(story.createdAt).toLocaleDateString("id-ID")}
                 </span>
               </CardDescription>
             </CardHeader>
@@ -68,7 +85,7 @@ export default function StoriesPage() {
 
               {/* Available Languages */}
               <div className="flex flex-wrap gap-1 mb-4">
-                {Object.keys(story.content).map((lang) => (
+                {Object.keys(story.content || {}).map((lang) => (
                   <Badge key={lang} variant="outline" className="text-xs">
                     {lang === "indonesian" && "ID"}
                     {lang === "sundanese" && "SU"}

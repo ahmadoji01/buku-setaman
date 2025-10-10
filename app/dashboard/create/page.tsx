@@ -194,10 +194,9 @@ export default function CreateStoryPage() {
 
     setIsLoading(true)
 
-    // Simulate save operation
-    setTimeout(() => {
-      const newStory = {
-        id: Date.now().toString(),
+    try {
+      // Prepare the story data
+      const storyData = {
         title: formData.title,
         content: {
           indonesian: formData.indonesian.filter((page) => page.text.trim()),
@@ -208,19 +207,36 @@ export default function CreateStoryPage() {
             english: formData.english.filter((page) => page.text.trim()),
           }),
         },
-        authorId: user.id,
-        authorName: user.name,
+        authorId: user?.id || '',
+        authorName: user?.name || '',
+        isPublished: publish,
         illustrations: aiContent.illustrations.length > 0 ? aiContent.illustrations : ["/placeholder.svg"],
         audioFiles: aiContent.audioFiles,
-        isPublished: publish,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       }
 
-      console.log("Story saved:", newStory)
-      setIsLoading(false)
+      // Call the API to save the story
+      const response = await fetch('/api/stories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(storyData),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save story')
+      }
+
+      alert(publish ? "Cerita berhasil disimpan dan dipublikasikan!" : "Cerita berhasil disimpan sebagai draft!")
       router.push("/dashboard")
-    }, 1000)
+    } catch (error) {
+      console.error('Save error:', error)
+      alert("Gagal menyimpan cerita. Silakan coba lagi.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
