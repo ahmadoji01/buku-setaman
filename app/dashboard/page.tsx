@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -20,12 +20,43 @@ import {
 import { Plus, BookOpen, Eye, Edit, Trash2, MoreHorizontal, Upload, BarChart3 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
-import { getStoriesByAuthor } from "@/lib/mock-data"
 import type { Story } from "@/lib/types"
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const [stories, setStories] = useState<Story[]>(getStoriesByAuthor(user?.id || "2"))
+  const [stories, setStories] = useState<Story[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchStories = async () => {
+      if (!user?.id) return
+
+      try {
+        const response = await fetch(`/api/stories?authorId=${user.id}`)
+        const data = await response.json()
+
+        if (response.ok && Array.isArray(data.stories)) {
+          // Ensure stories have the expected structure
+          const formattedStories = data.stories.map((story: any) => ({
+            ...story,
+            illustrations: story.illustrations || [],
+            audioFiles: story.audioFiles || {}
+          }))
+          setStories(formattedStories)
+        } else {
+          console.error('Failed to fetch stories:', data.error)
+          setStories([])
+        }
+      } catch (error) {
+        console.error('Error fetching stories:', error)
+        setStories([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStories()
+  }, [user?.id])
 
   if (!user || user.role !== "teacher") {
     return (
@@ -33,6 +64,16 @@ export default function DashboardPage() {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-foreground mb-4">Akses Ditolak</h1>
           <p className="text-muted-foreground">Anda harus masuk sebagai guru untuk mengakses dashboard ini.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center">
+          <p className="text-muted-foreground">Memuat cerita...</p>
         </div>
       </div>
     )
@@ -222,8 +263,6 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: Stor
                   <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{getStoryPreview(story)}</p>
 
                   <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                    <span>Dibuat: {story.createdAt.toLocaleDateString("id-ID")}</span>
-                    <span>Diperbarui: {story.updatedAt.toLocaleDateString("id-ID")}</span>
                     <span>Bahasa: {Object.keys(story.content).length}</span>
                   </div>
                 </div>

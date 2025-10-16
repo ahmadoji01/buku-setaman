@@ -9,6 +9,22 @@ export default async function HomePage() {
   const dbService = getDatabaseService()
   const stories = await dbService.getPublishedStoriesFromDB(6) // Show last 6 inserted stories from database
 
+  // Check if user is authenticated by calling the auth API
+  const checkAuth = async () => {
+    try {
+      const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/auth/me`, {
+        headers: {
+          'Cookie': 'user-session=dummy' // This will be replaced by actual cookie in real request
+        }
+      })
+      return response.ok
+    } catch {
+      return false
+    }
+  }
+
+  const isAuthenticated = await checkAuth()
+
   const getStoryPreview = (story: any) => {
     const content = story.content.indonesian
     if (Array.isArray(content)) {
@@ -43,12 +59,14 @@ export default async function HomePage() {
                 Jelajahi Cerita
               </Link>
             </Button>
-            <Button asChild variant="outline" size="lg" className="text-lg px-8 bg-transparent">
-              <Link href="/login">
-                <Users className="mr-2 h-5 w-5" />
-                Masuk sebagai Guru
-              </Link>
-            </Button>
+            {!isAuthenticated && (
+              <Button asChild variant="outline" size="lg" className="text-lg px-8 bg-transparent">
+                <Link href="/login">
+                  <Users className="mr-2 h-5 w-5" />
+                  Masuk sebagai Guru/Admin
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
       </section>
