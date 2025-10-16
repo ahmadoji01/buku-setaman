@@ -3,9 +3,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { BookOpen, Users, Sparkles, Globe } from "lucide-react"
 import { getPublishedStories } from "@/lib/mock-data"
+import { getDatabaseService } from "@/lib/db-service"
 
-export default function HomePage() {
-  const stories = getPublishedStories().slice(0, 3) // Show first 3 stories
+export default async function HomePage() {
+  const dbService = getDatabaseService()
+  const stories = await dbService.getPublishedStoriesFromDB(6) // Show last 6 inserted stories from database
 
   const getStoryPreview = (story: any) => {
     const content = story.content.indonesian
