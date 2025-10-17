@@ -10,9 +10,12 @@ export async function GET(
 
     // Ensure database tables exist
     const migrationSQL = `
+      DROP TABLE IF EXISTS story_page_audio;
+
       CREATE TABLE IF NOT EXISTS stories (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        cover_image TEXT,
         author_id TEXT NOT NULL,
         author_name TEXT NOT NULL,
         is_published INTEGER DEFAULT 0,
@@ -45,6 +48,16 @@ export async function GET(
         audio_url TEXT NOT NULL,
         FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS story_page_audio (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id TEXT NOT NULL,
+        page_number INTEGER NOT NULL,
+        language TEXT NOT NULL,
+        audio_url TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
+      );
     `;
 
     dbService.exec(migrationSQL);
@@ -68,14 +81,18 @@ export async function GET(
       );
     }
 
-    // Get pages
+    // Get pages with their audio
     const pagesQuery = `
-      SELECT * FROM story_pages WHERE story_id = ? ORDER BY page_number
+      SELECT sp.*, spa.audio_url as page_audio_url
+      FROM story_pages sp
+      LEFT JOIN story_page_audio spa ON sp.story_id = spa.story_id AND sp.page_number = spa.page_number AND sp.language = spa.language
+      WHERE sp.story_id = ?
+      ORDER BY sp.language, sp.page_number
     `;
 
     const pages = dbService.all(pagesQuery, [storyId]) as any[];
 
-    // Group pages by language
+    // Group pages by language with audio
     const content: any = {};
     pages.forEach((page: any) => {
       if (!content[page.language]) {
@@ -84,11 +101,12 @@ export async function GET(
       content[page.language].push({
         pageNumber: page.page_number,
         text: page.text,
-        illustration: page.illustration
+        illustration: page.illustration,
+        audio: page.page_audio_url || null
       });
     });
 
-    // Get illustrations
+    // Get illustrations (for legacy support)
     const illustrationsQuery = `
       SELECT illustration_url FROM story_illustrations WHERE story_id = ? ORDER BY order_index
     `;
@@ -96,7 +114,7 @@ export async function GET(
     const illustrations = dbService.all(illustrationsQuery, [storyId]) as any[];
     const illustrationUrls = illustrations.map((ill: any) => ill.illustration_url);
 
-    // Get audio files
+    // Get audio files (for legacy support - full story audio)
     const audioQuery = `
       SELECT language, audio_url FROM story_audio_files WHERE story_id = ?
     `;
@@ -110,6 +128,7 @@ export async function GET(
     const structuredStory = {
       id: story.id,
       title: story.title,
+      coverImage: story.cover_image,
       content,
       authorId: story.author_id,
       authorName: story.author_name,
@@ -124,7 +143,7 @@ export async function GET(
   } catch (error) {
     console.error('Error fetching story:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -154,31 +173,51 @@ export async function PUT(
       storyId
     ]);
 
-    // Delete existing pages, illustrations, and audio files
+    // Delete existing pages, page audio, illustrations, and audio files
     dbService.run('DELETE FROM story_pages WHERE story_id = ?', [storyId]);
+    dbService.run('DELETE FROM story_page_audio WHERE story_id = ?', [storyId]);
     dbService.run('DELETE FROM story_illustrations WHERE story_id = ?', [storyId]);
     dbService.run('DELETE FROM story_audio_files WHERE story_id = ?', [storyId]);
 
-    // Insert new pages
+    // Insert new pages with per-page audio
     if (content) {
       const insertPageQuery = `
         INSERT INTO story_pages (story_id, language, page_number, text, illustration)
+        VALUES (?, ?, ?, ?, ?)
+      `;
+
+      const insertPageAudioQuery = `
+        INSERT INTO story_page_audio (story_id, page_number, language, audio_url)
+        VALUES (?, ?, ?, ?)
       `;
 
       Object.entries(content).forEach(([language, pages]: [string, any]) => {
         if (Array.isArray(pages)) {
           pages.forEach((page: any, index: number) => {
+            const pageNumber = page.pageNumber || index + 1;
+            
             dbService.run(insertPageQuery, [
               storyId,
               language,
-              page.pageNumber || index + 1,
+              pageNumber,
               page.text || '',
               page.illustration || ''
             ]);
+
+            // Insert page-specific audio if available
+            if (page.audio) {
+              dbService.run(insertPageAudioQuery, [
+                storyId,
+                pageNumber,
+                language,
+                page.audio
+              ]);
+            }
           });
         }
       });
     }
+
     if (illustrations && Array.isArray(illustrations)) {
       const insertIllustrationQuery = `
         INSERT INTO story_illustrations (story_id, illustration_url, order_index)
@@ -190,7 +229,7 @@ export async function PUT(
       });
     }
 
-    // Insert new audio files
+    // Insert new audio files (legacy full-story audio)
     if (audioFiles && typeof audioFiles === 'object') {
       const insertAudioQuery = `
         INSERT INTO story_audio_files (story_id, language, audio_url)
@@ -211,7 +250,7 @@ export async function PUT(
   } catch (error) {
     console.error('Error updating story:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -243,7 +282,7 @@ export async function DELETE(
   } catch (error) {
     console.error('Error deleting story:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

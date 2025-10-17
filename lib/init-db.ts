@@ -100,13 +100,11 @@ const setupDatabase = () => {
       CREATE TABLE IF NOT EXISTS story_page_audio (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         story_id TEXT NOT NULL,
-        page_id INTEGER NOT NULL,
-        language TEXT CHECK(language IN ('indonesian', 'sundanese', 'english')) NOT NULL,
+        page_number INTEGER NOT NULL,
+        language TEXT NOT NULL,
         audio_url TEXT NOT NULL,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE,
-        FOREIGN KEY (page_id) REFERENCES story_pages(id) ON DELETE CASCADE,
-        UNIQUE(story_id, page_id, language)
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
       );
 
       -- Create indexes
@@ -119,7 +117,6 @@ const setupDatabase = () => {
       CREATE INDEX IF NOT EXISTS idx_book_progress_user_id ON book_progress(user_id);
       CREATE INDEX IF NOT EXISTS idx_book_progress_story_id ON book_progress(story_id);
       CREATE INDEX IF NOT EXISTS idx_story_page_audio_story_id ON story_page_audio(story_id);
-      CREATE INDEX IF NOT EXISTS idx_story_page_audio_page_id ON story_page_audio(page_id);
       CREATE INDEX IF NOT EXISTS idx_story_page_audio_language ON story_page_audio(language);
     `;
 

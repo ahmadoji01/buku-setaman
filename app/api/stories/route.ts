@@ -22,13 +22,12 @@ async function handleFileUpload(file: File, subDir: string): Promise<string> {
 
   const buffer = await file.arrayBuffer();
   const fileId = generateFileId();
-  const ext = file.name.split('.').pop();
+  const ext = file.name.split('.').pop() || 'bin';
   const fileName = `${fileId}.${ext}`;
   const filePath = join(UPLOAD_DIR, subDir, fileName);
 
   await writeFile(filePath, Buffer.from(buffer));
 
-  // Return relative path for public access
   return `/uploads/${subDir}/${fileName}`;
 }
 
@@ -36,7 +35,6 @@ export async function GET(request: NextRequest) {
   try {
     const dbService = getDatabaseService();
 
-    // Ensure database tables exist
     const migrationSQL = `
       CREATE TABLE IF NOT EXISTS stories (
         id TEXT PRIMARY KEY,
@@ -81,13 +79,13 @@ export async function GET(request: NextRequest) {
         page_number INTEGER NOT NULL,
         language TEXT NOT NULL,
         audio_url TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
       );
     `;
 
     dbService.exec(migrationSQL);
 
-    // Get query parameters
     const { searchParams } = new URL(request.url);
     const authorId = searchParams.get('authorId');
     const published = searchParams.get('published');
@@ -126,7 +124,6 @@ export async function GET(request: NextRequest) {
 
     const stories = dbService.all(query, params) as any[];
 
-    // Transform the flat results into structured story objects
     const structuredStories = stories.map(story => {
       const pages = story.page_ids ? story.page_ids.split(',').map((id: string, index: number) => ({
         id: parseInt(id),
@@ -137,7 +134,6 @@ export async function GET(request: NextRequest) {
         illustration: story.page_illustrations?.split(',')[index] || ''
       })) : [];
 
-      // Group pages by language
       const content: any = {};
       pages.forEach((page: any) => {
         if (!content[page.language]) {
@@ -177,7 +173,6 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
 
-    // Extract form fields
     const title = formData.get('title') as string;
     const authorId = formData.get('authorId') as string;
     const authorName = formData.get('authorName') as string;
@@ -191,7 +186,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const content = JSON.parse(contentStr);
+    let content;
+    try {
+      content = JSON.parse(contentStr);
+    } catch (e) {
+      return NextResponse.json(
+        { error: 'Invalid content format: ' + (e instanceof Error ? e.message : 'Unknown error') },
+        { status: 400 }
+      );
+    }
+
     if (!content.indonesian || content.indonesian.length === 0) {
       return NextResponse.json(
         { error: 'Indonesian content is required' },
@@ -202,29 +206,42 @@ export async function POST(request: NextRequest) {
     const dbService = getDatabaseService();
     const storyId = `story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Handle cover image upload
     let coverImagePath = null;
     const coverImageFile = formData.get('coverImage') as File | null;
     if (coverImageFile && coverImageFile.size > 0) {
-      coverImagePath = await handleFileUpload(coverImageFile, 'covers');
+      try {
+        coverImagePath = await handleFileUpload(coverImageFile, 'covers');
+      } catch (error) {
+        console.error('Cover image upload error:', error);
+        return NextResponse.json(
+          { error: 'Failed to upload cover image: ' + (error instanceof Error ? error.message : 'Unknown error') },
+          { status: 400 }
+        );
+      }
     }
 
-    // Insert story
     const insertStoryQuery = `
       INSERT INTO stories (id, title, cover_image, author_id, author_name, is_published, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `;
 
-    dbService.run(insertStoryQuery, [
-      storyId,
-      title,
-      coverImagePath,
-      authorId,
-      authorName,
-      isPublished ? 1 : 0
-    ]);
+    try {
+      dbService.run(insertStoryQuery, [
+        storyId,
+        title,
+        coverImagePath,
+        authorId,
+        authorName,
+        isPublished ? 1 : 0
+      ]);
+    } catch (error) {
+      console.error('Story insert error:', error);
+      return NextResponse.json(
+        { error: 'Failed to create story: ' + (error instanceof Error ? error.message : 'Unknown error') },
+        { status: 500 }
+      );
+    }
 
-    // Insert pages and handle per-page media files
     const insertPageQuery = `
       INSERT INTO story_pages (story_id, language, page_number, text, illustration)
       VALUES (?, ?, ?, ?, ?)
@@ -244,81 +261,73 @@ export async function POST(request: NextRequest) {
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
         const page = pages[pageIndex];
 
-        // Handle per-page illustration
         let illustrationPath = null;
         const illustrationKey = `illustration_${language}_${pageIndex}`;
         const illustrationFile = formData.get(illustrationKey) as File | null;
 
         if (illustrationFile && illustrationFile.size > 0) {
-          illustrationPath = await handleFileUpload(illustrationFile, 'illustrations');
+          try {
+            illustrationPath = await handleFileUpload(illustrationFile, 'illustrations');
+          } catch (error) {
+            console.error(`Illustration upload error for ${language} page ${pageIndex}:`, error);
+            return NextResponse.json(
+              { error: `Failed to upload illustration for ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
+              { status: 400 }
+            );
+          }
         }
 
-        // Insert page
-        dbService.run(insertPageQuery, [
-          storyId,
-          language,
-          pageIndex + 1,
-          page.text || '',
-          illustrationPath
-        ]);
+        try {
+          dbService.run(insertPageQuery, [
+            storyId,
+            language,
+            pageIndex + 1,
+            page.text || '',
+            illustrationPath
+          ]);
+        } catch (error) {
+          console.error(`Page insert error for ${language} page ${pageIndex}:`, error);
+          return NextResponse.json(
+            { error: `Failed to save ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
+            { status: 500 }
+          );
+        }
 
         // Handle per-page audio
         const audioKey = `audio_${language}_${pageIndex}`;
         const audioFile = formData.get(audioKey) as File | null;
 
         if (audioFile && audioFile.size > 0) {
-          const audioPath = await handleFileUpload(audioFile, 'audio');
-
-          // Insert into story_page_audio for per-page tracking
-          dbService.run(insertPageAudioQuery, [
-            storyId,
-            pageIndex + 1,
-            language,
-            audioPath
-          ]);
-        }
-      }
-    }
-
-    // Handle legacy full-story audio files if provided (for backward compatibility)
-    if (formData.has('audioFiles')) {
-      const audioFilesStr = formData.get('audioFiles') as string;
-      try {
-        const audioFiles = JSON.parse(audioFilesStr);
-        const insertAudioQuery = `
-          INSERT INTO story_audio_files (story_id, language, audio_url)
-          VALUES (?, ?, ?)
-        `;
-
-        Object.entries(audioFiles).forEach(([language, url]: [string, any]) => {
-          if (url && typeof url === 'string') {
-            dbService.run(insertAudioQuery, [storyId, language, url]);
-          }
-        });
-      } catch (e) {
-        console.warn('Could not parse audioFiles:', e);
-      }
-    }
-
-    // Handle legacy illustrations if provided (for backward compatibility)
-    if (formData.has('illustrations')) {
-      const illustrationsStr = formData.get('illustrations') as string;
-      try {
-        const illustrations = JSON.parse(illustrationsStr);
-        const insertIllustrationQuery = `
-          INSERT INTO story_illustrations (story_id, illustration_url, order_index)
-          VALUES (?, ?, ?)
-        `;
-
-        if (Array.isArray(illustrations)) {
-          illustrations.forEach((url: string, index: number) => {
-            if (url) {
-              dbService.run(insertIllustrationQuery, [storyId, url, index]);
+          try {
+            // Validate audio file before upload
+            if (!audioFile.type.includes('audio') && !audioFile.name.includes('.mp3')) {
+              console.warn(`Audio file ${audioFile.name} has unexpected type: ${audioFile.type}`);
             }
-          });
+
+            const audioPath = await handleFileUpload(audioFile, 'audio');
+
+            try {
+              dbService.run(insertPageAudioQuery, [
+                storyId,
+                pageIndex + 1,
+                language,
+                audioPath
+              ]);
+            } catch (error) {
+              console.error(`Audio insert error for ${language} page ${pageIndex}:`, error);
+              return NextResponse.json(
+                { error: `Failed to save audio for ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
+                { status: 500 }
+              );
+            }
+          } catch (error) {
+            console.error(`Audio upload error for ${language} page ${pageIndex}:`, error);
+            return NextResponse.json(
+              { error: `Failed to upload audio for ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
+              { status: 400 }
+            );
+          }
         }
-      } catch (e) {
-        console.warn('Could not parse illustrations:', e);
       }
     }
 
@@ -330,14 +339,6 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Error creating story:', error);
-
-    if (error instanceof SyntaxError) {
-      return NextResponse.json(
-        { error: 'Invalid content format' },
-        { status: 400 }
-      );
-    }
-
     return NextResponse.json(
       { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
