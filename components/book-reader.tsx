@@ -89,13 +89,28 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
     ]
   }
 
-  const pages = getStoryPages()
+  const storyPages = getStoryPages()
+  
+  // Create pages array with cover as first page
+  const pages = story.coverImage 
+    ? [
+        {
+          pageNumber: 0,
+          text: "",
+          illustration: story.coverImage,
+          audio: null,
+          isCover: true
+        },
+        ...storyPages
+      ]
+    : storyPages
+  
   const totalPages = pages.length
   const currentPageData = pages[currentPage]
   const currentPageText = currentPageData?.text || ""
-  const currentPageIllustration =
-    currentPageData?.illustration || story.illustrations[currentPage] || story.illustrations[0]
+  const currentPageIllustration = currentPageData?.illustration
   const currentPageAudio = currentPageData?.audio
+  const isCoverPage = currentPageData?.isCover === true
 
   // Handle page navigation
   const goToNextPage = () => {
@@ -120,7 +135,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
 
   // Stop audio when page changes
   useEffect(() => {
-    console.log(story);
     if (audioRef.current) {
       audioRef.current.pause()
       setIsPlaying(false)
@@ -375,20 +389,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
       {/* Book Reader */}
       <Card className="min-h-[500px] relative overflow-hidden">
         <CardContent className="p-8">
-          {/* Story Title and Cover */}
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-foreground mb-4">{story.title}</h1>
-            {story.coverImage && (
-              <div className="mb-6">
-                <img
-                  src={story.coverImage}
-                  alt={`Cover: ${story.title}`}
-                  className="w-48 h-64 object-cover mx-auto rounded-lg shadow-lg"
-                />
-              </div>
-            )}
-          </div>
-
           {/* Book Pages */}
           <div className="relative">
             <div
@@ -397,39 +397,58 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
                 isPageTurning && "transform scale-95 opacity-50",
               )}
             >
-              {/* Story Illustration */}
-              {currentPageIllustration && (
-                <div className="mb-6 text-center">
-                  <img
-                    src={currentPageIllustration || "/placeholder.svg"}
-                    alt={`Ilustrasi halaman ${currentPage + 1}`}
-                    className="max-w-full h-64 object-contain mx-auto rounded-lg"
-                  />
+              {/* Cover Page */}
+              {isCoverPage ? (
+                <div className="text-center space-y-6">
+                  <h1 className="text-4xl font-bold text-foreground">{story.title}</h1>
+                  <div>
+                    <img
+                      src={currentPageIllustration}
+                      alt={`Cover: ${story.title}`}
+                      className="w-64 h-80 object-cover mx-auto rounded-lg shadow-lg"
+                    />
+                  </div>
+                  <div className="text-muted-foreground">
+                    <p className="text-sm">Penulis: {story.authorName}</p>
+                  </div>
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* Story Illustration */}
+                  {currentPageIllustration && (
+                    <div className="mb-6 text-center">
+                      <img
+                        src={currentPageIllustration || "/placeholder.svg"}
+                        alt={`Ilustrasi halaman ${currentPageData?.pageNumber || currentPage}`}
+                        className="max-w-full h-64 object-contain mx-auto rounded-lg"
+                      />
+                    </div>
+                  )}
 
-              {/* Story Text */}
-              <div
-                className={cn(
-                  "text-center leading-relaxed",
-                  fontFamily === "serif" && "font-serif",
-                  fontFamily === "mono" && "font-mono",
-                  fontFamily === "sans" && "font-sans",
-                )}
-                style={{ fontSize: `${fontSize}px` }}
-              >
-                {currentPageText.split(" ").map((word, index) => (
-                  <span
-                    key={index}
+                  {/* Story Text */}
+                  <div
                     className={cn(
-                      "transition-colors duration-200",
-                      highlightedWord === index && "bg-primary/20 text-primary font-medium",
+                      "text-center leading-relaxed",
+                      fontFamily === "serif" && "font-serif",
+                      fontFamily === "mono" && "font-mono",
+                      fontFamily === "sans" && "font-sans",
                     )}
+                    style={{ fontSize: `${fontSize}px` }}
                   >
-                    {word}{" "}
-                  </span>
-                ))}
-              </div>
+                    {currentPageText.split(" ").map((word, index) => (
+                      <span
+                        key={index}
+                        className={cn(
+                          "transition-colors duration-200",
+                          highlightedWord === index && "bg-primary/20 text-primary font-medium",
+                        )}
+                      >
+                        {word}{" "}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
