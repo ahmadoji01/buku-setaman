@@ -7,6 +7,7 @@ import { BookOpen, Clock, User } from "lucide-react"
 interface Story {
   id: string
   title: string
+  coverImage?: string
   content: any
   authorId: string
   authorName: string
@@ -54,7 +55,7 @@ export default async function StoriesPage() {
           <Card key={story.id} className="overflow-hidden hover:shadow-lg transition-shadow group">
             <div className="aspect-video bg-muted relative overflow-hidden">
               <img
-                src={story.illustrations?.[0] || "/placeholder.svg"}
+                src={story.coverImage || story.illustrations?.[0] || "/placeholder.svg"}
                 alt={story.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
               />

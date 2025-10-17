@@ -12,6 +12,7 @@ export interface User {
 export interface Story {
   id: string
   title: string
+  coverImage?: string
   content: {
     indonesian?: StoryPage[]
     sundanese?: StoryPage[]

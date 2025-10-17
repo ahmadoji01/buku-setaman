@@ -1,5 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseService } from '@/lib/db-service';
+import { writeFile, mkdir } from 'fs/promises';
+import { join } from 'path';
+import { existsSync } from 'fs';
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR || 'public/uploads';
+
+async function ensureUploadDir(subDir: string) {
+  const dirPath = join(UPLOAD_DIR, subDir);
+  if (!existsSync(dirPath)) {
+    await mkdir(dirPath, { recursive: true });
+  }
+}
+
+function generateFileId() {
+  return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+async function handleFileUpload(file: File, subDir: string): Promise<string> {
+  await ensureUploadDir(subDir);
+
+  const buffer = await file.arrayBuffer();
+  const fileId = generateFileId();
+  const ext = file.name.split('.').pop();
+  const fileName = `${fileId}.${ext}`;
+  const filePath = join(UPLOAD_DIR, subDir, fileName);
+
+  await writeFile(filePath, Buffer.from(buffer));
+
+  // Return relative path for public access
+  return `/uploads/${subDir}/${fileName}`;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,6 +41,7 @@ export async function GET(request: NextRequest) {
       CREATE TABLE IF NOT EXISTS stories (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        cover_image TEXT,
         author_id TEXT NOT NULL,
         author_name TEXT NOT NULL,
         is_published INTEGER DEFAULT 0,
@@ -38,6 +70,15 @@ export async function GET(request: NextRequest) {
       CREATE TABLE IF NOT EXISTS story_audio_files (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         story_id TEXT NOT NULL,
+        language TEXT NOT NULL,
+        audio_url TEXT NOT NULL,
+        FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS story_page_audio (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id TEXT NOT NULL,
+        page_number INTEGER NOT NULL,
         language TEXT NOT NULL,
         audio_url TEXT NOT NULL,
         FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
@@ -72,7 +113,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (published !== null) {
-      // Convert string "true"/"false" to boolean, or parse as integer if already numeric
       const publishedBool = published === "true" ? 1 : published === "false" ? 0 : parseInt(published);
       conditions.push('s.is_published = ?');
       params.push(publishedBool);
@@ -113,6 +153,7 @@ export async function GET(request: NextRequest) {
       return {
         id: story.id,
         title: story.title,
+        coverImage: story.cover_image,
         content,
         authorId: story.author_id,
         authorName: story.author_name,
@@ -134,12 +175,26 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { title, content, authorId, authorName, isPublished, illustrations, audioFiles } = body;
+    const formData = await request.formData();
 
-    if (!title || !content || !authorId || !authorName) {
+    // Extract form fields
+    const title = formData.get('title') as string;
+    const authorId = formData.get('authorId') as string;
+    const authorName = formData.get('authorName') as string;
+    const isPublished = formData.get('isPublished') === 'true';
+    const contentStr = formData.get('content') as string;
+
+    if (!title || !contentStr || !authorId || !authorName) {
       return NextResponse.json(
         { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    const content = JSON.parse(contentStr);
+    if (!content.indonesian || content.indonesian.length === 0) {
+      return NextResponse.json(
+        { error: 'Indonesian content is required' },
         { status: 400 }
       );
     }
@@ -147,75 +202,144 @@ export async function POST(request: NextRequest) {
     const dbService = getDatabaseService();
     const storyId = `story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+    // Handle cover image upload
+    let coverImagePath = null;
+    const coverImageFile = formData.get('coverImage') as File | null;
+    if (coverImageFile && coverImageFile.size > 0) {
+      coverImagePath = await handleFileUpload(coverImageFile, 'covers');
+    }
+
     // Insert story
     const insertStoryQuery = `
-      INSERT INTO stories (id, title, author_id, author_name, is_published, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO stories (id, title, cover_image, author_id, author_name, is_published, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `;
 
     dbService.run(insertStoryQuery, [
       storyId,
       title,
+      coverImagePath,
       authorId,
       authorName,
       isPublished ? 1 : 0
     ]);
 
-    // Insert pages for each language
+    // Insert pages and handle per-page media files
     const insertPageQuery = `
       INSERT INTO story_pages (story_id, language, page_number, text, illustration)
       VALUES (?, ?, ?, ?, ?)
     `;
 
-    Object.entries(content).forEach(([language, pages]: [string, any]) => {
-      if (Array.isArray(pages)) {
-        pages.forEach((page: any, index: number) => {
-          dbService.run(insertPageQuery, [
+    const insertPageAudioQuery = `
+      INSERT INTO story_page_audio (story_id, page_number, language, audio_url)
+      VALUES (?, ?, ?, ?)
+    `;
+
+    const languages = ['indonesian', 'sundanese', 'english'] as const;
+
+    for (const language of languages) {
+      const pages = content[language];
+      if (!Array.isArray(pages) || pages.length === 0) continue;
+
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+        const page = pages[pageIndex];
+
+        // Handle per-page illustration
+        let illustrationPath = null;
+        const illustrationKey = `illustration_${language}_${pageIndex}`;
+        const illustrationFile = formData.get(illustrationKey) as File | null;
+
+        if (illustrationFile && illustrationFile.size > 0) {
+          illustrationPath = await handleFileUpload(illustrationFile, 'illustrations');
+        }
+
+        // Insert page
+        dbService.run(insertPageQuery, [
+          storyId,
+          language,
+          pageIndex + 1,
+          page.text || '',
+          illustrationPath
+        ]);
+
+        // Handle per-page audio
+        const audioKey = `audio_${language}_${pageIndex}`;
+        const audioFile = formData.get(audioKey) as File | null;
+
+        if (audioFile && audioFile.size > 0) {
+          const audioPath = await handleFileUpload(audioFile, 'audio');
+
+          // Insert into story_page_audio for per-page tracking
+          dbService.run(insertPageAudioQuery, [
             storyId,
+            pageIndex + 1,
             language,
-            page.pageNumber || index + 1,
-            page.text || '',
-            page.illustration || ''
+            audioPath
           ]);
-        });
+        }
       }
-    });
-
-    // Insert illustrations if provided
-    if (illustrations && Array.isArray(illustrations)) {
-      const insertIllustrationQuery = `
-        INSERT INTO story_illustrations (story_id, illustration_url, order_index)
-        VALUES (?, ?, ?)
-      `;
-
-      illustrations.forEach((url: string, index: number) => {
-        dbService.run(insertIllustrationQuery, [storyId, url, index]);
-      });
     }
 
-    // Insert audio files if provided
-    if (audioFiles && typeof audioFiles === 'object') {
-      const insertAudioQuery = `
-        INSERT INTO story_audio_files (story_id, language, audio_url)
-        VALUES (?, ?, ?)
-      `;
+    // Handle legacy full-story audio files if provided (for backward compatibility)
+    if (formData.has('audioFiles')) {
+      const audioFilesStr = formData.get('audioFiles') as string;
+      try {
+        const audioFiles = JSON.parse(audioFilesStr);
+        const insertAudioQuery = `
+          INSERT INTO story_audio_files (story_id, language, audio_url)
+          VALUES (?, ?, ?)
+        `;
 
-      Object.entries(audioFiles).forEach(([language, url]: [string, any]) => {
-        if (url) {
-          dbService.run(insertAudioQuery, [storyId, language, url]);
+        Object.entries(audioFiles).forEach(([language, url]: [string, any]) => {
+          if (url && typeof url === 'string') {
+            dbService.run(insertAudioQuery, [storyId, language, url]);
+          }
+        });
+      } catch (e) {
+        console.warn('Could not parse audioFiles:', e);
+      }
+    }
+
+    // Handle legacy illustrations if provided (for backward compatibility)
+    if (formData.has('illustrations')) {
+      const illustrationsStr = formData.get('illustrations') as string;
+      try {
+        const illustrations = JSON.parse(illustrationsStr);
+        const insertIllustrationQuery = `
+          INSERT INTO story_illustrations (story_id, illustration_url, order_index)
+          VALUES (?, ?, ?)
+        `;
+
+        if (Array.isArray(illustrations)) {
+          illustrations.forEach((url: string, index: number) => {
+            if (url) {
+              dbService.run(insertIllustrationQuery, [storyId, url, index]);
+            }
+          });
         }
-      });
+      } catch (e) {
+        console.warn('Could not parse illustrations:', e);
+      }
     }
 
     return NextResponse.json({
       success: true,
       storyId,
-      message: 'Story created successfully'
-    });
+      message: 'Story created successfully with all files'
+    }, { status: 201 });
+
   } catch (error) {
     console.error('Error creating story:', error);
+
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: 'Invalid content format' },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

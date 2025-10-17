@@ -30,6 +30,7 @@ const setupDatabase = () => {
       CREATE TABLE IF NOT EXISTS stories (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
+          cover_image TEXT,
           author_id TEXT NOT NULL,
           author_name TEXT NOT NULL,
           is_published BOOLEAN NOT NULL DEFAULT FALSE,
@@ -96,6 +97,18 @@ const setupDatabase = () => {
           UNIQUE(user_id, story_id)
       );
 
+      CREATE TABLE IF NOT EXISTS story_page_audio (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        story_id TEXT NOT NULL,
+        page_id INTEGER NOT NULL,
+        language TEXT CHECK(language IN ('indonesian', 'sundanese', 'english')) NOT NULL,
+        audio_url TEXT NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE,
+        FOREIGN KEY (page_id) REFERENCES story_pages(id) ON DELETE CASCADE,
+        UNIQUE(story_id, page_id, language)
+      );
+
       -- Create indexes
       CREATE INDEX IF NOT EXISTS idx_stories_author_id ON stories(author_id);
       CREATE INDEX IF NOT EXISTS idx_stories_is_published ON stories(is_published);
@@ -105,6 +118,9 @@ const setupDatabase = () => {
       CREATE INDEX IF NOT EXISTS idx_story_audio_story_id ON story_audio_files(story_id);
       CREATE INDEX IF NOT EXISTS idx_book_progress_user_id ON book_progress(user_id);
       CREATE INDEX IF NOT EXISTS idx_book_progress_story_id ON book_progress(story_id);
+      CREATE INDEX IF NOT EXISTS idx_story_page_audio_story_id ON story_page_audio(story_id);
+      CREATE INDEX IF NOT EXISTS idx_story_page_audio_page_id ON story_page_audio(page_id);
+      CREATE INDEX IF NOT EXISTS idx_story_page_audio_language ON story_page_audio(language);
     `;
 
     // Execute schema creation
@@ -132,12 +148,12 @@ const setupDatabase = () => {
       
       // Insert stories
       const storyStmt = db.prepare(`
-        INSERT INTO stories (id, title, author_id, author_name, is_published, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO stories (id, title, cover_image, author_id, author_name, is_published, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
       
-      storyStmt.run('1', 'Kebun Sayur Kecil', '2', 'Ibu Sari', 1, '2024-02-01 00:00:00', '2024-02-01 00:00:00');
-      storyStmt.run('2', 'Petualangan di Hutan', '3', 'Pak Budi', 1, '2024-02-05 00:00:00', '2024-02-05 00:00:00');
+      storyStmt.run('1', 'Kebun Sayur Kecil', '/covers/veggie-garden.jpg', '2', 'Ibu Sari', 1, '2024-02-01 00:00:00', '2024-02-01 00:00:00');
+      storyStmt.run('2', 'Petualangan di Hutan', '/covers/forest-adventure.jpg', '3', 'Pak Budi', 1, '2024-02-05 00:00:00', '2024-02-05 00:00:00');
       
       // Insert story pages
       const pageStmt = db.prepare(`

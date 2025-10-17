@@ -281,8 +281,19 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
       {/* Book Reader */}
       <Card className="min-h-[500px] relative overflow-hidden">
         <CardContent className="p-8">
-          {/* Story Title */}
-          <h1 className="text-2xl font-bold text-center mb-8 text-foreground">{story.title}</h1>
+          {/* Story Title and Cover */}
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-foreground mb-4">{story.title}</h1>
+            {story.coverImage && (
+              <div className="mb-6">
+                <img
+                  src={story.coverImage}
+                  alt={`Cover: ${story.title}`}
+                  className="w-48 h-64 object-cover mx-auto rounded-lg shadow-lg"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Book Pages */}
           <div className="relative">

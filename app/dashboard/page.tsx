@@ -91,18 +91,18 @@ export default function DashboardPage() {
   }
 
   const getStoryPreview = (story: Story) => {
-    const content = story.content.indonesian
-    if (Array.isArray(content)) {
+    const indonesianContent = story.content.indonesian
+    if (Array.isArray(indonesianContent)) {
       // New format: array of StoryPage objects
       return (
-        content
+        indonesianContent
           .map((page) => page.text)
           .join(" ")
           .substring(0, 100) + "..."
       )
     }
     // Old format: string
-    return typeof content === "string" ? content.substring(0, 100) + "..." : ""
+    return typeof indonesianContent === "string" ? indonesianContent.substring(0, 100) + "..." : ""
   }
 
   return (
@@ -243,7 +243,7 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: Stor
             {/* Story Thumbnail */}
             <div className="w-32 h-24 bg-muted flex-shrink-0">
               <img
-                src={story.illustrations[0] || "/placeholder.svg"}
+                src={story.coverImage || story.illustrations[0] || "/placeholder.svg"}
                 alt={story.title}
                 className="w-full h-full object-cover"
               />
