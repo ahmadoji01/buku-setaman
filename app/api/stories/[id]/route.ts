@@ -10,8 +10,6 @@ export async function GET(
 
     // Ensure database tables exist
     const migrationSQL = `
-      DROP TABLE IF EXISTS story_page_audio;
-
       CREATE TABLE IF NOT EXISTS stories (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -81,6 +79,16 @@ export async function GET(
       );
     }
 
+    // Debug: Check what's in story_page_audio table
+    const debugAudioQuery = `SELECT * FROM story_page_audio WHERE story_id = ?`;
+    const debugAudio = dbService.all(debugAudioQuery, [storyId]) as any[];
+    console.log('DEBUG - Audio records in DB:', debugAudio);
+
+    // Debug: Check what's in story_pages table
+    const debugPagesQuery = `SELECT * FROM story_pages WHERE story_id = ?`;
+    const debugPages = dbService.all(debugPagesQuery, [storyId]) as any[];
+    console.log('DEBUG - Page records in DB:', debugPages);
+
     // Get pages with their audio
     const pagesQuery = `
       SELECT sp.*, spa.audio_url as page_audio_url
@@ -91,9 +99,15 @@ export async function GET(
     `;
 
     const pages = dbService.all(pagesQuery, [storyId]) as any[];
+    console.log('Pages fetched:', pages.length);
+    pages.forEach((p: any, idx: number) => {
+      console.log(`Page ${idx}: language=${p.language}, page_number=${p.page_number}, audio_url=${p.page_audio_url}`);
+    });
 
     // Group pages by language with audio
     const content: any = {};
+    const audioFilesByLanguage: Record<string, string> = {};
+    
     pages.forEach((page: any) => {
       if (!content[page.language]) {
         content[page.language] = [];
@@ -104,6 +118,11 @@ export async function GET(
         illustration: page.illustration,
         audio: page.page_audio_url || null
       });
+      
+      // Store first page's audio as fallback for legacy audioFiles object
+      if (page.page_audio_url && !audioFilesByLanguage[page.language]) {
+        audioFilesByLanguage[page.language] = page.page_audio_url;
+      }
     });
 
     // Get illustrations (for legacy support)
@@ -123,6 +142,13 @@ export async function GET(
     const audioFiles: Record<string, string> = {};
     audioFilesResult.forEach((audio: any) => {
       audioFiles[audio.language] = audio.audio_url;
+    });
+    
+    // Merge per-page audio into audioFiles as fallback if no legacy audio exists
+    Object.entries(audioFilesByLanguage).forEach(([language, url]) => {
+      if (!audioFiles[language]) {
+        audioFiles[language] = url;
+      }
     });
 
     const structuredStory = {

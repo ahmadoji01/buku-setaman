@@ -179,6 +179,8 @@ export async function POST(request: NextRequest) {
     const isPublished = formData.get('isPublished') === 'true';
     const contentStr = formData.get('content') as string;
 
+    console.log('Creating story with:', { title, authorId, authorName, isPublished });
+
     if (!title || !contentStr || !authorId || !authorName) {
       return NextResponse.json(
         { error: 'Missing required fields' },
@@ -211,6 +213,7 @@ export async function POST(request: NextRequest) {
     if (coverImageFile && coverImageFile.size > 0) {
       try {
         coverImagePath = await handleFileUpload(coverImageFile, 'covers');
+        console.log('Cover image uploaded:', coverImagePath);
       } catch (error) {
         console.error('Cover image upload error:', error);
         return NextResponse.json(
@@ -234,6 +237,7 @@ export async function POST(request: NextRequest) {
         authorName,
         isPublished ? 1 : 0
       ]);
+      console.log('Story created:', storyId);
     } catch (error) {
       console.error('Story insert error:', error);
       return NextResponse.json(
@@ -256,7 +260,12 @@ export async function POST(request: NextRequest) {
 
     for (const language of languages) {
       const pages = content[language];
-      if (!Array.isArray(pages) || pages.length === 0) continue;
+      if (!Array.isArray(pages) || pages.length === 0) {
+        console.log(`Skipping ${language} - no pages`);
+        continue;
+      }
+
+      console.log(`Processing ${language} with ${pages.length} pages`);
 
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
         const page = pages[pageIndex];
@@ -268,6 +277,7 @@ export async function POST(request: NextRequest) {
         if (illustrationFile && illustrationFile.size > 0) {
           try {
             illustrationPath = await handleFileUpload(illustrationFile, 'illustrations');
+            console.log(`Illustration uploaded for ${language} page ${pageIndex}:`, illustrationPath);
           } catch (error) {
             console.error(`Illustration upload error for ${language} page ${pageIndex}:`, error);
             return NextResponse.json(
@@ -285,6 +295,7 @@ export async function POST(request: NextRequest) {
             page.text || '',
             illustrationPath
           ]);
+          console.log(`Page inserted: ${language} page ${pageIndex + 1}`);
         } catch (error) {
           console.error(`Page insert error for ${language} page ${pageIndex}:`, error);
           return NextResponse.json(
@@ -297,22 +308,28 @@ export async function POST(request: NextRequest) {
         const audioKey = `audio_${language}_${pageIndex}`;
         const audioFile = formData.get(audioKey) as File | null;
 
+        console.log(`Checking audio for ${audioKey}:`, audioFile ? `File found (${audioFile.size} bytes)` : 'No file');
+
         if (audioFile && audioFile.size > 0) {
           try {
-            // Validate audio file before upload
-            if (!audioFile.type.includes('audio') && !audioFile.name.includes('.mp3')) {
-              console.warn(`Audio file ${audioFile.name} has unexpected type: ${audioFile.type}`);
-            }
-
+            console.log(`Uploading audio for ${language} page ${pageIndex}:`, audioFile.name);
             const audioPath = await handleFileUpload(audioFile, 'audio');
+            console.log(`Audio uploaded successfully:`, audioPath);
 
             try {
-              dbService.run(insertPageAudioQuery, [
+              const result = dbService.run(insertPageAudioQuery, [
                 storyId,
                 pageIndex + 1,
                 language,
                 audioPath
               ]);
+              console.log(`Audio insert result:`, result);
+              console.log(`Audio inserted into DB: ${language} page ${pageIndex + 1} -> ${audioPath}`);
+              
+              // Verify it was actually inserted
+              const verifyQuery = `SELECT * FROM story_page_audio WHERE story_id = ? AND page_number = ? AND language = ?`;
+              const verifyResult = dbService.get(verifyQuery, [storyId, pageIndex + 1, language]) as any;
+              console.log(`Verification query result:`, verifyResult);
             } catch (error) {
               console.error(`Audio insert error for ${language} page ${pageIndex}:`, error);
               return NextResponse.json(
@@ -327,6 +344,8 @@ export async function POST(request: NextRequest) {
               { status: 400 }
             );
           }
+        } else {
+          console.log(`No audio file for ${language} page ${pageIndex}`);
         }
       }
     }

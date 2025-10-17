@@ -16,6 +16,7 @@ import {
   Settings,
   Volume2,
   VolumeX,
+  RotateCcw,
 } from "lucide-react"
 import type { Story, Language, BookProgress, StoryPage } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -35,13 +36,15 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
   const [bookmarks, setBookmarks] = useState<number[]>([])
   const [isPageTurning, setIsPageTurning] = useState(false)
   const [highlightedWord, setHighlightedWord] = useState<number>(-1)
+  const [audioProgress, setAudioProgress] = useState(0)
+  const [audioDuration, setAudioDuration] = useState(0)
 
   const audioRef = useRef<HTMLAudioElement>(null)
 
   const getStoryPages = (): StoryPage[] => {
     const content = story.content[selectedLanguage]
 
-    // Handle new StoryPage array structure
+    // Handle new StoryPage array structure with per-page audio
     if (Array.isArray(content)) {
       return content
     }
@@ -51,7 +54,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
       const sentences = content.split(". ").filter(Boolean)
       const pages: StoryPage[] = []
 
-      // Group sentences into pages (2-3 sentences per page)
       for (let i = 0; i < sentences.length; i += 2) {
         const pageContent = sentences.slice(i, i + 2).join(". ") + (i + 2 < sentences.length ? "." : "")
         pages.push({
@@ -89,6 +91,11 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
 
   const pages = getStoryPages()
   const totalPages = pages.length
+  const currentPageData = pages[currentPage]
+  const currentPageText = currentPageData?.text || ""
+  const currentPageIllustration =
+    currentPageData?.illustration || story.illustrations[currentPage] || story.illustrations[0]
+  const currentPageAudio = currentPageData?.audio
 
   // Handle page navigation
   const goToNextPage = () => {
@@ -111,15 +118,29 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
     }
   }
 
+  // Stop audio when page changes
+  useEffect(() => {
+    console.log(story);
+    if (audioRef.current) {
+      audioRef.current.pause()
+      setIsPlaying(false)
+      setAudioProgress(0)
+      setAudioDuration(0)
+    }
+  }, [currentPage, selectedLanguage])
+
   // Handle audio playback
   const toggleAudio = () => {
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause()
+        setIsPlaying(false)
       } else {
-        audioRef.current.play()
+        audioRef.current.play().catch((error) => {
+          console.error("Error playing audio:", error)
+        })
+        setIsPlaying(true)
       }
-      setIsPlaying(!isPlaying)
     }
   }
 
@@ -128,6 +149,48 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
       audioRef.current.muted = !isMuted
       setIsMuted(!isMuted)
     }
+  }
+
+  const handleResetAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+      setAudioProgress(0)
+    }
+  }
+
+  const handleAudioTimeUpdate = () => {
+    if (audioRef.current) {
+      setAudioProgress(audioRef.current.currentTime)
+    }
+  }
+
+  const handleAudioLoadedMetadata = () => {
+    if (audioRef.current) {
+      setAudioDuration(audioRef.current.duration)
+    }
+  }
+
+  const handleAudioEnd = () => {
+    setIsPlaying(false)
+    // Auto-advance to next page when audio ends
+    if (currentPage < totalPages - 1) {
+      goToNextPage()
+    }
+  }
+
+  const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value)
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime
+      setAudioProgress(newTime)
+    }
+  }
+
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return "0:00"
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, "0")}`
   }
 
   // Handle bookmarks
@@ -153,7 +216,7 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
           setHighlightedWord(-1)
           clearInterval(interval)
         }
-      }, 500) // Highlight each word for 500ms
+      }, 500)
 
       return () => clearInterval(interval)
     } else {
@@ -165,7 +228,7 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
   useEffect(() => {
     if (onProgressUpdate) {
       onProgressUpdate({
-        userId: "current-user", // This would come from auth context
+        userId: "current-user",
         storyId: story.id,
         currentPage,
         totalPages,
@@ -184,24 +247,22 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
     english: "English",
   }
 
-  const currentPageData = pages[currentPage]
-  const currentPageText = currentPageData?.text || ""
-  const currentPageIllustration =
-    currentPageData?.illustration || story.illustrations[currentPage] || story.illustrations[0]
-
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
-      {/* Audio element */}
+      {/* Audio element for per-page audio */}
       <audio
         ref={audioRef}
-        src={story.audioFiles[selectedLanguage]}
-        onEnded={() => setIsPlaying(false)}
+        src={currentPageAudio || ""}
+        onTimeUpdate={handleAudioTimeUpdate}
+        onLoadedMetadata={handleAudioLoadedMetadata}
+        onEnded={handleAudioEnd}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+        crossOrigin="anonymous"
       />
 
       {/* Controls Bar */}
-      <div className="flex items-center justify-between bg-card p-4 rounded-lg border">
+      <div className="flex items-center justify-between bg-card p-4 rounded-lg border flex-wrap gap-4">
         <div className="flex items-center space-x-4">
           {/* Language Selector */}
           <Select value={selectedLanguage} onValueChange={(value: Language) => setSelectedLanguage(value)}>
@@ -217,15 +278,20 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
             </SelectContent>
           </Select>
 
-          {/* Audio Controls */}
-          <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm" onClick={toggleAudio} disabled={!story.audioFiles[selectedLanguage]}>
-              {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </Button>
-            <Button variant="outline" size="sm" onClick={toggleMute}>
-              {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            </Button>
-          </div>
+          {/* Audio Controls - Only show if current page has audio */}
+          {currentPageAudio && (
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="sm" onClick={toggleAudio}>
+                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </Button>
+              <Button variant="outline" size="sm" onClick={toggleMute}>
+                {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleResetAudio}>
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center space-x-4">
@@ -277,6 +343,34 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Per-Page Audio Player */}
+      {currentPageAudio && (
+        <Card className="bg-slate-50 dark:bg-slate-900 border">
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="0"
+                    max={audioDuration || 0}
+                    value={audioProgress}
+                    onChange={handleProgressChange}
+                    className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {formatTime(audioProgress)} / {formatTime(audioDuration)}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                🔊 Audio narasi tersedia untuk halaman ini
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Book Reader */}
       <Card className="min-h-[500px] relative overflow-hidden">
