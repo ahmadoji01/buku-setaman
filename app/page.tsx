@@ -1,60 +1,58 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import { BookOpen, Users, Sparkles, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BookOpen, Users, Sparkles, Globe } from "lucide-react"
 
-export default async function HomePage() {
-  // Fetch stories from the API instead of directly from DB
-  let stories = []
-  try {
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
-    const response = await fetch(`${baseUrl}/api/stories?published=true`, {
-      cache: 'no-store'
-    })
-    const data = await response.json()
-    if (data.stories && Array.isArray(data.stories)) {
-      // API returns stories ordered by created_at DESC, so take first 6 which are the latest
-      stories = data.stories.slice(0, 6)
+interface Story {
+  id: string
+  title: string
+  coverImage?: string
+  content: Record<string, any>
+  authorName: string
+  illustrations?: string[]
+}
+
+export default function HomePage() {
+  const [stories, setStories] = useState<Story[]>([])
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch published stories
+        const storiesRes = await fetch("/api/stories?published=true")
+        const storiesData = await storiesRes.json()
+        setStories((storiesData.stories || []).slice(0, 6))
+
+        // Check authentication
+        const authRes = await fetch("/api/auth/me")
+        setIsAuthenticated(authRes.ok)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        setStories([])
+        setIsAuthenticated(false)
+      } finally {
+        setLoading(false)
+      }
     }
-  } catch (error) {
-    console.error('Error fetching stories from API:', error)
-    stories = []
-  }
 
-  // Check if user is authenticated by calling the auth API
-  const checkAuth = async () => {
-    try {
-      const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/auth/me`, {
-        headers: {
-          'Cookie': 'user-session=dummy' // This will be replaced by actual cookie in real request
-        }
-      })
-      return response.ok
-    } catch {
-      return false
-    }
-  }
+    fetchData()
+  }, [])
 
-  const isAuthenticated = await checkAuth()
-
-  const getStoryPreview = (story: any) => {
-    const content = story.content.indonesian
+  const getStoryPreview = (story: Story) => {
+    const content = story.content?.indonesian
     if (Array.isArray(content)) {
-      // New format: array of StoryPage objects
-      return (
-        content
-          .map((page) => page.text)
-          .join(" ")
-          .substring(0, 150) + "..."
-      )
+      return content.map((page: any) => page.text).join(" ").substring(0, 150) + "..."
     }
-    // Old format: string
     return typeof content === "string" ? content.substring(0, 150) + "..." : ""
   }
 
-  const getStoryImage = (story: any) => {
-    // Prioritize cover image, then fall back to first illustration
-    return story.coverImage || story.illustrations[0] || "/placeholder.svg"
+  const getStoryImage = (story: Story) => {
+    return story.coverImage || story.illustrations?.[0] || "/placeholder.svg"
   }
 
   return (
@@ -149,35 +147,46 @@ export default async function HomePage() {
           <p className="text-lg text-muted-foreground">Jelajahi cerita-cerita menarik dari para guru</p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8">
-          {stories.map((story) => (
-            <Card key={story.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-              <div className="aspect-video bg-muted relative">
-                <img
-                  src={getStoryImage(story)}
-                  alt={story.title}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <CardHeader>
-                <CardTitle className="text-lg">{story.title}</CardTitle>
-                <CardDescription>Oleh {story.authorName}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4 line-clamp-3">{getStoryPreview(story)}</p>
-                <Button asChild variant="outline" className="w-full bg-transparent">
-                  <Link href={`/stories/${story.id}`}>Baca Cerita</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {loading ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Memuat cerita...</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid md:grid-cols-3 gap-8">
+              {stories.map((story) => (
+                <Card key={story.id} className="overflow-hidden hover:shadow-lg transition-shadow group">
+                  <div className="aspect-video bg-muted relative overflow-hidden">
+                    <img
+                      src={getStoryImage(story)}
+                      alt={story.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "/placeholder.svg"
+                      }}
+                    />
+                  </div>
+                  <CardHeader>
+                    <CardTitle className="text-lg">{story.title}</CardTitle>
+                    <CardDescription>Oleh {story.authorName}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground mb-4 line-clamp-3">{getStoryPreview(story)}</p>
+                    <Button asChild variant="outline" className="w-full bg-transparent">
+                      <Link href={`/stories/${story.id}`}>Baca Cerita</Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
-        <div className="text-center mt-8">
-          <Button asChild variant="outline" size="lg">
-            <Link href="/stories">Lihat Semua Cerita</Link>
-          </Button>
-        </div>
+            <div className="text-center mt-8">
+              <Button asChild variant="outline" size="lg">
+                <Link href="/stories">Lihat Semua Cerita</Link>
+              </Button>
+            </div>
+          </>
+        )}
       </section>
     </div>
   )
