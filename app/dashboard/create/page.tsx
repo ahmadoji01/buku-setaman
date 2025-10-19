@@ -197,7 +197,6 @@ export default function CreateStoryPage() {
       }))
       setError(null)
     } catch (error) {
-      console.error('Illustration generation error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Gagal menghasilkan ilustrasi'
       setError(errorMessage)
       setFormData(prev => ({
@@ -259,7 +258,6 @@ export default function CreateStoryPage() {
           throw new Error('Failed to create audio file')
         }
       } catch (conversionError) {
-        console.error('Audio conversion error:', conversionError)
         throw new Error('Failed to process generated audio: ' + (conversionError instanceof Error ? conversionError.message : 'Unknown error'))
       }
 
@@ -273,7 +271,6 @@ export default function CreateStoryPage() {
       }))
       setError(null)
     } catch (error) {
-      console.error('Audio generation error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Gagal menghasilkan audio'
       setError(errorMessage)
       setFormData(prev => ({
@@ -437,11 +434,6 @@ export default function CreateStoryPage() {
               formDataToSend.append(`illustration_${lang}_${pageIndex}`, page.illustrationFile)
             }
             if (page.audioFile && page.audioFile instanceof File) {
-              console.log(`Adding audio file: audio_${lang}_${pageIndex}`, {
-                name: page.audioFile.name,
-                size: page.audioFile.size,
-                type: page.audioFile.type
-              })
               formDataToSend.append(`audio_${lang}_${pageIndex}`, page.audioFile)
             }
           }
@@ -462,10 +454,7 @@ export default function CreateStoryPage() {
       alert(publish ? "Cerita berhasil disimpan dan dipublikasikan!" : "Cerita berhasil disimpan sebagai draft!")
       router.push("/dashboard")
     } catch (error) {
-      console.error('Save error:', error)
-      const errorMessage = error instanceof Error ? error.message : "Gagal menyimpan cerita. Silakan coba lagi."
-      setError(errorMessage)
-    } finally {
+      const errorMessage = error instanceof Error ? error.message : 
       setIsLoading(false)
     }
   }

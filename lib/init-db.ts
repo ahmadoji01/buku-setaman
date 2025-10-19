@@ -264,15 +264,7 @@ const setupDatabase = () => {
     
     db.exec(triggers);
     
-    console.log('✅ Database setup completed successfully!');
-    console.log('📊 Mock data inserted:');
-    console.log('   - 3 users (1 admin, 2 teachers)');
-    console.log('   - 2 stories with multilingual content');
-    console.log('   - 2 modules');
-    console.log('🗄️  Database file: bukusetaman.db');
-    
   } catch (error) {
-    console.error('❌ Database setup failed:', error);
     throw error;
   } finally {
     db.close();

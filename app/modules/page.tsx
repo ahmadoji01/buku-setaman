@@ -1,16 +1,46 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { GraduationCap, FileText, Presentation, File, Clock, User, AlertCircle } from "lucide-react"
-import Link from "next/link"
 import { useAuth } from "@/lib/auth"
-import { mockModules } from "@/lib/mock-data"
+
+interface Module {
+  id: string
+  title: string
+  description: string
+  type: "blog" | "ppt" | "pdf"
+  content: string
+  fileUrl?: string
+  createdAt: string
+  updatedAt: string
+}
 
 export default function ModulesPage() {
   const { user } = useAuth()
+  const [modules, setModules] = useState<Module[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchModules = async () => {
+      try {
+        const response = await fetch("/api/admin/modules")
+        const data = await response.json()
+        setModules(data.modules || [])
+      } catch (error) {
+        console.error("Error fetching modules:", error)
+        setModules([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchModules()
+  }, [])
 
   // Only teachers can access modules
   if (!user || user.role === "public") {
@@ -26,6 +56,16 @@ export default function ModulesPage() {
             dengan akun guru untuk mengakses konten ini.
           </AlertDescription>
         </Alert>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center">
+          <p className="text-muted-foreground">Memuat modul...</p>
+        </div>
       </div>
     )
   }
@@ -85,55 +125,57 @@ export default function ModulesPage() {
       )}
 
       {/* Modules Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {mockModules.map((module) => (
-          <Card key={module.id} className="overflow-hidden hover:shadow-lg transition-shadow group">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-2">
-                  {getModuleIcon(module.type)}
-                  <CardTitle className="text-lg line-clamp-2">{module.title}</CardTitle>
-                </div>
-                {getModuleTypeBadge(module.type)}
-              </div>
-              <CardDescription className="line-clamp-3">{module.description}</CardDescription>
-            </CardHeader>
-
-            <CardContent>
-              <div className="space-y-4">
-                {/* Module Preview */}
-                <div className="text-sm text-muted-foreground line-clamp-3">{module.content.substring(0, 150)}...</div>
-
-                {/* Module Meta */}
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="flex items-center">
-                    <Clock className="h-3 w-3 mr-1" />
-                    {module.createdAt.toLocaleDateString("id-ID")}
-                  </span>
-                  <span className="flex items-center">
-                    <User className="h-3 w-3 mr-1" />
-                    Admin
-                  </span>
-                </div>
-
-                {/* Action Button */}
-                <Button asChild className="w-full">
-                  <Link href={`/modules/${module.id}`}>
-                    {getModuleIcon(module.type)}
-                    <span className="ml-2">Buka Modul</span>
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {mockModules.length === 0 && (
+      {modules.length === 0 ? (
         <div className="text-center py-12">
           <GraduationCap className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">Belum Ada Modul</h3>
           <p className="text-muted-foreground">Modul pelatihan akan muncul di sini setelah admin menambahkannya.</p>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {modules.map((module) => (
+            <Card key={module.id} className="overflow-hidden hover:shadow-lg transition-shadow group">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-2">
+                    {getModuleIcon(module.type)}
+                    <CardTitle className="text-lg line-clamp-2">{module.title}</CardTitle>
+                  </div>
+                  {getModuleTypeBadge(module.type)}
+                </div>
+                <CardDescription className="line-clamp-3">{module.description}</CardDescription>
+              </CardHeader>
+
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Module Preview */}
+                  <div className="text-sm text-muted-foreground line-clamp-3">
+                    {module.content?.substring(0, 150) || "File modul tersedia untuk diunduh"}...
+                  </div>
+
+                  {/* Module Meta */}
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="flex items-center">
+                      <Clock className="h-3 w-3 mr-1" />
+                      {new Date(module.createdAt).toLocaleDateString("id-ID")}
+                    </span>
+                    <span className="flex items-center">
+                      <User className="h-3 w-3 mr-1" />
+                      Admin
+                    </span>
+                  </div>
+
+                  {/* Action Button */}
+                  <Button asChild className="w-full">
+                    <Link href={`/modules/${module.id}`}>
+                      {getModuleIcon(module.type)}
+                      <span className="ml-2">Buka Modul</span>
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>

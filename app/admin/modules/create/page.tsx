@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -16,16 +15,19 @@ import Link from "next/link"
 import { useAuth } from "@/lib/auth"
 import type { Module } from "@/lib/types"
 
+type ModuleType = "blog" | "ppt" | "pdf"
+
 export default function CreateModulePage() {
   const router = useRouter()
   const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [error, setError] = useState("")
 
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    type: "blog" as Module["type"],
+    type: "blog" as ModuleType,
     content: "",
   })
 
@@ -42,12 +44,12 @@ export default function CreateModulePage() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    setError("")
   }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
-      // Validate file type
       const allowedTypes = {
         ppt: [
           "application/vnd.ms-powerpoint",
@@ -60,52 +62,66 @@ export default function CreateModulePage() {
         formData.type === "blog" || allowedTypes[formData.type as keyof typeof allowedTypes]?.includes(file.type)
 
       if (!isValidType) {
-        alert("Tipe file tidak sesuai dengan jenis modul yang dipilih")
+        setError("Tipe file tidak sesuai dengan jenis modul yang dipilih")
         return
       }
 
       setUploadedFile(file)
+      setError("")
     }
   }
 
   const handleSave = async () => {
     if (!formData.title.trim() || !formData.description.trim()) {
-      alert("Judul dan deskripsi wajib diisi")
+      setError("Judul dan deskripsi wajib diisi")
       return
     }
 
     if (formData.type === "blog" && !formData.content.trim()) {
-      alert("Konten blog wajib diisi")
+      setError("Konten blog wajib diisi")
       return
     }
 
     if ((formData.type === "ppt" || formData.type === "pdf") && !uploadedFile) {
-      alert("File wajib diupload untuk jenis modul ini")
+      setError("File wajib diupload untuk jenis modul ini")
       return
     }
 
     setIsLoading(true)
+    setError("")
 
-    // Simulate save operation
-    setTimeout(() => {
-      const newModule: Module = {
-        id: Date.now().toString(),
-        title: formData.title,
-        description: formData.description,
-        type: formData.type,
-        content: formData.content,
-        fileUrl: uploadedFile ? `/uploads/${uploadedFile.name}` : undefined,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+    try {
+      const form = new FormData()
+      form.append("title", formData.title)
+      form.append("description", formData.description)
+      form.append("type", formData.type)
+      if (formData.type === "blog") {
+        form.append("content", formData.content)
+      } else if (uploadedFile) {
+        form.append("file", uploadedFile)
       }
 
-      console.log("Module saved:", newModule)
+      const response = await fetch("/api/admin/modules", {
+        method: "POST",
+        body: form,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || "Gagal membuat modul")
+        setIsLoading(false)
+        return
+      }
+
+      router.push("/admin/modules")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan")
       setIsLoading(false)
-      router.push("/admin")
-    }, 1000)
+    }
   }
 
-  const getModuleTypeIcon = (type: Module["type"]) => {
+  const getModuleTypeIcon = (type: ModuleType) => {
     switch (type) {
       case "ppt":
         return <Presentation className="h-4 w-4" />
@@ -116,7 +132,7 @@ export default function CreateModulePage() {
     }
   }
 
-  const getModuleTypeDescription = (type: Module["type"]) => {
+  const getModuleTypeDescription = (type: ModuleType) => {
     switch (type) {
       case "ppt":
         return "Upload file PowerPoint untuk presentasi interaktif"
@@ -129,7 +145,6 @@ export default function CreateModulePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
       <div className="mb-8">
         <Button asChild variant="ghost" className="mb-4">
           <Link href="/admin">
@@ -141,8 +156,14 @@ export default function CreateModulePage() {
         <p className="text-lg text-muted-foreground">Buat modul pelatihan baru untuk guru</p>
       </div>
 
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       <div className="space-y-6">
-        {/* Basic Info */}
         <Card>
           <CardHeader>
             <CardTitle>Informasi Dasar</CardTitle>
@@ -172,7 +193,6 @@ export default function CreateModulePage() {
           </CardContent>
         </Card>
 
-        {/* Module Type */}
         <Card>
           <CardHeader>
             <CardTitle>Jenis Modul</CardTitle>
@@ -181,7 +201,7 @@ export default function CreateModulePage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="type">Jenis Modul *</Label>
-              <Select value={formData.type} onValueChange={(value: Module["type"]) => handleInputChange("type", value)}>
+              <Select value={formData.type} onValueChange={(value: ModuleType) => handleInputChange("type", value)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -220,7 +240,6 @@ export default function CreateModulePage() {
           </CardContent>
         </Card>
 
-        {/* Content Section */}
         {formData.type === "blog" ? (
           <Card>
             <CardHeader>
@@ -300,7 +319,6 @@ export default function CreateModulePage() {
           </Card>
         )}
 
-        {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-4">
           <Button onClick={handleSave} disabled={isLoading} className="flex-1">
             <Save className="mr-2 h-4 w-4" />

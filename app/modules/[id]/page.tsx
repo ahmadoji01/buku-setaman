@@ -1,10 +1,11 @@
-import { notFound } from "next/navigation"
+"use client"
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Download, FileText, Presentation, File, Clock, User } from "lucide-react"
-import Link from "next/link"
-import { mockModules } from "@/lib/mock-data"
 
 interface ModulePageProps {
   params: {
@@ -12,11 +13,60 @@ interface ModulePageProps {
   }
 }
 
+interface Module {
+  id: string
+  title: string
+  description: string
+  type: "blog" | "ppt" | "pdf"
+  content: string
+  fileUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export default function ModulePage({ params }: ModulePageProps) {
-  const module = mockModules.find((m) => m.id === params.id)
+  const [module, setModule] = useState<Module | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchModule = async () => {
+      try {
+        const response = await fetch("/api/admin/modules")
+        const data = await response.json()
+        const foundModule = data.modules?.find((m: Module) => m.id === params.id)
+        setModule(foundModule || null)
+      } catch (error) {
+        console.error("Error fetching module:", error)
+        setModule(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchModule()
+  }, [params.id])
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center">
+          <p className="text-muted-foreground">Memuat modul...</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!module) {
-    notFound()
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-foreground mb-4">Modul Tidak Ditemukan</h1>
+          <Button asChild>
+            <Link href="/modules">Kembali ke Modul</Link>
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   const getModuleIcon = (type: string) => {
@@ -76,7 +126,7 @@ export default function ModulePage({ params }: ModulePageProps) {
               <div className="flex items-center space-x-6 text-sm text-muted-foreground">
                 <span className="flex items-center">
                   <Clock className="h-4 w-4 mr-1" />
-                  Dibuat: {module.createdAt.toLocaleDateString("id-ID")}
+                  Dibuat: {new Date(module.createdAt).toLocaleDateString("id-ID")}
                 </span>
                 <span className="flex items-center">
                   <User className="h-4 w-4 mr-1" />
@@ -87,10 +137,10 @@ export default function ModulePage({ params }: ModulePageProps) {
 
             {module.fileUrl && (
               <Button asChild>
-                <Link href={module.fileUrl} target="_blank">
+                <a href={module.fileUrl} target="_blank" rel="noopener noreferrer">
                   <Download className="mr-2 h-4 w-4" />
                   Download
-                </Link>
+                </a>
               </Button>
             )}
           </div>
@@ -134,10 +184,10 @@ export default function ModulePage({ params }: ModulePageProps) {
                 </p>
                 {module.fileUrl && (
                   <Button asChild size="lg">
-                    <Link href={module.fileUrl} target="_blank">
+                    <a href={module.fileUrl} target="_blank" rel="noopener noreferrer">
                       <Download className="mr-2 h-5 w-5" />
                       Download File
-                    </Link>
+                    </a>
                   </Button>
                 )}
               </div>
@@ -166,7 +216,7 @@ export default function ModulePage({ params }: ModulePageProps) {
               </div>
               <div>
                 <strong className="text-foreground">Terakhir Diperbarui:</strong>
-                <p className="text-muted-foreground mt-1">{module.updatedAt.toLocaleDateString("id-ID")}</p>
+                <p className="text-muted-foreground mt-1">{new Date(module.updatedAt).toLocaleDateString("id-ID")}</p>
               </div>
               <div>
                 <strong className="text-foreground">Status:</strong>
