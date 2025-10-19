@@ -1,23 +1,24 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server'
 
 export async function POST() {
   try {
-    const response = NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true })
 
-    // Clear the session cookie
-    response.cookies.set('user-session', '', {
+    // Clear the auth token cookie
+    response.cookies.set('auth-token', '', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 0, // Expire immediately
-    });
+      path: '/',
+    })
 
-    return response;
+    return response
   } catch (error) {
-    console.error('Logout error:', error);
+    console.error('Logout error:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 }

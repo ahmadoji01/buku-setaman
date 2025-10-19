@@ -1,42 +1,53 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getDatabaseService } from '@/lib/db-service';
+import { NextRequest, NextResponse } from 'next/server'
+import { getDatabaseService } from '@/lib/db-service'
+import { verifyToken } from '@/lib/jwt-utils'
 
 export async function GET(request: NextRequest) {
   try {
-    // In a real app, you'd verify JWT token from cookies/headers
-    // For demo purposes, we'll check for a session cookie
-    const sessionEmail = request.cookies.get('user-session')?.value;
+    // Get token from HTTP-only cookie
+    const token = request.cookies.get('auth-token')?.value
 
-    if (!sessionEmail) {
+    if (!token) {
       return NextResponse.json(
-        { error: 'Not authenticated' },
+        { success: false, error: 'Not authenticated' },
         { status: 401 }
-      );
+      )
     }
 
-    const dbService = getDatabaseService();
-    const user = await dbService.findUserByEmail(sessionEmail);
+    // Verify token
+    const decoded = verifyToken(token)
+    if (!decoded) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid or expired token' },
+        { status: 401 }
+      )
+    }
+
+    // Get user from database
+    const dbService = getDatabaseService()
+    const user = await dbService.findUserByEmail(decoded.email)
 
     if (!user) {
       return NextResponse.json(
-        { error: 'User not found' },
+        { success: false, error: 'User not found' },
         { status: 404 }
-      );
+      )
     }
 
     return NextResponse.json({
+      success: true,
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
-      }
-    });
+      },
+    })
   } catch (error) {
-    console.error('Get user error:', error);
+    console.error('Get user error:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 }

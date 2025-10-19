@@ -1,21 +1,23 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/lib/auth"
 import Link from "next/link"
 import Image from "next/image"
+import { AlertCircle, Loader2 } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
-  const { login } = useAuth()
+  const { login, isLoading: authLoading } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -23,20 +25,45 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
     setIsLoading(true)
 
     try {
+      // Validate inputs
+      if (!formData.email.trim()) {
+        setError("Email tidak boleh kosong")
+        setIsLoading(false)
+        return
+      }
+
+      if (!formData.password.trim()) {
+        setError("Password tidak boleh kosong")
+        setIsLoading(false)
+        return
+      }
+
       const success = await login(formData.email, formData.password)
       if (success) {
         router.push("/dashboard")
       } else {
-        alert("Email atau password salah")
+        setError("Email atau password salah")
       }
     } catch (error) {
-      alert("Terjadi kesalahan saat login")
+      setError("Terjadi kesalahan saat login. Silakan coba lagi.")
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Memverifikasi sesi...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -55,6 +82,14 @@ export default function LoginPage() {
           <p className="text-muted-foreground">Akses dashboard guru dan kelola cerita Anda</p>
         </div>
 
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         {/* Login Form */}
         <Card>
           <CardHeader>
@@ -71,6 +106,7 @@ export default function LoginPage() {
                   placeholder="guru@example.com"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  disabled={isLoading}
                   required
                 />
               </div>
@@ -83,22 +119,29 @@ export default function LoginPage() {
                   placeholder="Masukkan password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  disabled={isLoading}
                   required
                 />
               </div>
 
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "Masuk..." : "Masuk"}
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Masuk...
+                  </>
+                ) : (
+                  "Masuk"
+                )}
               </Button>
             </form>
 
             <div className="mt-4 text-center text-sm text-muted-foreground">
-              <p>Demo Login:</p>
-              <p>Email: admin@bukusetaman.com</p>
-              <p>Password: admin123</p>
-              <p className="mt-2 text-xs">or</p>
-              <p>Email: sari@teacher.com</p>
-              <p>Password: teacher123</p>
+              <p className="font-semibold mb-2">Demo Login:</p>
+              <div className="space-y-1 text-xs">
+                <p><strong>Admin:</strong> admin@bukusetaman.com / admin123</p>
+                <p><strong>Guru:</strong> sari@teacher.com / teacher123</p>
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -1,29 +1,35 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getDatabaseService } from '@/lib/db-service';
+import { NextRequest, NextResponse } from 'next/server'
+import { getDatabaseService } from '@/lib/db-service'
+import { generateToken } from '@/lib/jwt-utils'
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
+    const { email, password } = await request.json()
 
     if (!email || !password) {
       return NextResponse.json(
-        { error: 'Email and password are required' },
+        { success: false, error: 'Email and password are required' },
         { status: 400 }
-      );
+      )
     }
 
-    const dbService = getDatabaseService();
-    const user = await dbService.authenticateUser(email, password);
+    const dbService = getDatabaseService()
+    const user = await dbService.authenticateUser(email, password)
 
     if (!user) {
       return NextResponse.json(
-        { error: 'Invalid credentials' },
+        { success: false, error: 'Invalid email or password' },
         { status: 401 }
-      );
+      )
     }
 
-    // In a real app, you'd create a JWT token here
-    // For demo purposes, we'll just return the user data
+    // Generate JWT token
+    const token = generateToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    })
+
     const response = NextResponse.json({
       success: true,
       user: {
@@ -31,23 +37,24 @@ export async function POST(request: NextRequest) {
         name: user.name,
         email: user.email,
         role: user.role,
-      }
-    });
+      },
+    })
 
-    // Set a simple session cookie (in production, use proper JWT)
-    response.cookies.set('user-session', user.email, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+    // Set HTTP-only cookie with token
+    response.cookies.set('auth-token', token, {
+      httpOnly: true, // Prevent JavaScript access
+      secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+      sameSite: 'lax', // CSRF protection
       maxAge: 60 * 60 * 24 * 7, // 7 days
-    });
+      path: '/',
+    })
 
-    return response;
+    return response
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { success: false, error: 'Internal server error' },
       { status: 500 }
-    );
+    )
   }
 }

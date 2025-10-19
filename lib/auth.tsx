@@ -6,9 +6,10 @@ import type { User, UserRole } from "./types"
 interface AuthContextType {
   user: User | null
   login: (email: string, password: string) => Promise<boolean>
-  logout: () => void
+  logout: () => Promise<void>
   isAuthenticated: boolean
   hasRole: (role: UserRole) => boolean
+  isLoading: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -16,37 +17,47 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
+  // Check authentication on mount and restore session
   useEffect(() => {
-    // Check for stored user session
-    const storedUserId = localStorage.getItem("userId")
-    if (storedUserId) {
-      // Check if user is still authenticated via API
-      fetch('/api/auth/me')
-        .then((response) => response.json())
-        .then((data) => {
-          if (data.user) {
-            setUser(data.user)
-            setIsAuthenticated(true)
-          } else {
-            // Clear invalid session
-            localStorage.removeItem("userId")
-          }
-        })
-        .catch((error) => {
-          console.error('Session check error:', error)
-          localStorage.removeItem("userId")
-        })
-    }
+    checkAuthStatus()
   }, [])
+
+  const checkAuthStatus = async () => {
+    try {
+      setIsLoading(true)
+      const response = await fetch('/api/auth/me', {
+        method: 'GET',
+        credentials: 'include', // Important: sends cookies
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setUser(data.user)
+        setIsAuthenticated(true)
+      } else {
+        setUser(null)
+        setIsAuthenticated(false)
+      }
+    } catch (error) {
+      console.error('Session check error:', error)
+      setUser(null)
+      setIsAuthenticated(false)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
+      setIsLoading(true)
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Important: receives cookies
         body: JSON.stringify({ email, password }),
       })
 
@@ -55,7 +66,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok && data.success) {
         setUser(data.user)
         setIsAuthenticated(true)
-        localStorage.setItem("userId", data.user.email) // Store email for session
         return true
       }
 
@@ -63,18 +73,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Login error:', error)
       return false
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const logout = () => {
-    // Call logout API to clear server-side session
-    fetch('/api/auth/logout', { method: 'POST' })
-      .catch((error) => console.error('Logout error:', error))
-      .finally(() => {
-        setUser(null)
-        setIsAuthenticated(false)
-        localStorage.removeItem("userId")
+  const logout = async () => {
+    try {
+      setIsLoading(true)
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
       })
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      setUser(null)
+      setIsAuthenticated(false)
+      setIsLoading(false)
+    }
   }
 
   const hasRole = (role: UserRole): boolean => {
@@ -89,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         isAuthenticated,
         hasRole,
+        isLoading,
       }}
     >
       {children}
