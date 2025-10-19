@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -10,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ArrowLeft, Save, User, Lock, Shield } from "lucide-react"
+import { ArrowLeft, Save, User, Lock, Shield, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
 import type { UserRole } from "@/lib/types"
@@ -19,6 +18,7 @@ export default function CreateUserPage() {
   const router = useRouter()
   const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -42,10 +42,10 @@ export default function CreateUserPage() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: "" }))
     }
+    setError("")
   }
 
   const validateForm = () => {
@@ -81,6 +81,7 @@ export default function CreateUserPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError("")
 
     if (!validateForm()) {
       return
@@ -88,26 +89,37 @@ export default function CreateUserPage() {
 
     setIsLoading(true)
 
-    // Simulate save operation
-    setTimeout(() => {
-      const newUser = {
-        id: Date.now().toString(),
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          role: formData.role,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || "Gagal membuat pengguna")
+        setIsLoading(false)
+        return
       }
 
-      console.log("User created:", newUser)
+      router.push("/admin/users")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan")
       setIsLoading(false)
-      router.push("/admin")
-    }, 1000)
+    }
   }
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
       <div className="mb-8">
         <Button asChild variant="ghost" className="mb-4">
           <Link href="/admin">
@@ -119,8 +131,14 @@ export default function CreateUserPage() {
         <p className="text-lg text-muted-foreground">Buat akun baru untuk guru atau admin</p>
       </div>
 
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Basic Information */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -157,7 +175,6 @@ export default function CreateUserPage() {
           </CardContent>
         </Card>
 
-        {/* Security */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -195,7 +212,6 @@ export default function CreateUserPage() {
           </CardContent>
         </Card>
 
-        {/* Role Selection */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -246,7 +262,6 @@ export default function CreateUserPage() {
           </CardContent>
         </Card>
 
-        {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-4">
           <Button type="submit" disabled={isLoading} className="flex-1">
             <Save className="mr-2 h-4 w-4" />

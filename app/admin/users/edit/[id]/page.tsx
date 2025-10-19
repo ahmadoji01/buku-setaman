@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -13,7 +12,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { ArrowLeft, Save, User, Shield, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
-import { mockUsers } from "@/lib/mock-data"
 import type { UserRole } from "@/lib/types"
 
 interface EditUserPageProps {
@@ -22,11 +20,22 @@ interface EditUserPageProps {
   }
 }
 
+interface UserData {
+  id: string
+  name: string
+  email: string
+  role: UserRole
+  createdAt: string
+  updatedAt: string
+}
+
 export default function EditUserPage({ params }: EditUserPageProps) {
   const router = useRouter()
   const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
-  const [targetUser, setTargetUser] = useState(mockUsers.find((u) => u.id === params.id))
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [targetUser, setTargetUser] = useState<UserData | null>(null)
 
   const [formData, setFormData] = useState({
     name: "",
@@ -37,14 +46,30 @@ export default function EditUserPage({ params }: EditUserPageProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    if (targetUser) {
-      setFormData({
-        name: targetUser.name,
-        email: targetUser.email,
-        role: targetUser.role,
-      })
+    const fetchUser = async () => {
+      try {
+        const response = await fetch("/api/admin/users")
+        const data = await response.json()
+        const foundUser = data.users?.find((u: UserData) => u.id === params.id)
+        setTargetUser(foundUser || null)
+
+        if (foundUser) {
+          setFormData({
+            name: foundUser.name,
+            email: foundUser.email,
+            role: foundUser.role,
+          })
+        }
+      } catch (err) {
+        console.error("Error fetching user:", err)
+        setTargetUser(null)
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [targetUser])
+
+    fetchUser()
+  }, [params.id])
 
   if (!user || user.role !== "admin") {
     return (
@@ -52,6 +77,16 @@ export default function EditUserPage({ params }: EditUserPageProps) {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-foreground mb-4">Akses Ditolak</h1>
           <p className="text-muted-foreground">Anda harus masuk sebagai admin untuk mengedit pengguna.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="text-center">
+          <p className="text-muted-foreground">Memuat pengguna...</p>
         </div>
       </div>
     )
@@ -73,10 +108,10 @@ export default function EditUserPage({ params }: EditUserPageProps) {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: "" }))
     }
+    setError("")
   }
 
   const validateForm = () => {
@@ -102,6 +137,7 @@ export default function EditUserPage({ params }: EditUserPageProps) {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError("")
 
     if (!validateForm()) {
       return
@@ -109,27 +145,39 @@ export default function EditUserPage({ params }: EditUserPageProps) {
 
     setIsLoading(true)
 
-    // Simulate save operation
-    setTimeout(() => {
-      const updatedUser = {
-        ...targetUser,
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        updatedAt: new Date(),
+    try {
+      const response = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: targetUser.id,
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || "Gagal mengupdate pengguna")
+        setIsLoading(false)
+        return
       }
 
-      console.log("User updated:", updatedUser)
-      setIsLoading(false)
       router.push("/admin/users")
-    }, 1000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Terjadi kesalahan")
+      setIsLoading(false)
+    }
   }
 
   const isEditingSelf = user.id === targetUser.id
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
       <div className="mb-8">
         <Button asChild variant="ghost" className="mb-4">
           <Link href="/admin/users">
@@ -150,8 +198,14 @@ export default function EditUserPage({ params }: EditUserPageProps) {
         </Alert>
       )}
 
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Basic Information */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -188,7 +242,6 @@ export default function EditUserPage({ params }: EditUserPageProps) {
           </CardContent>
         </Card>
 
-        {/* Role Selection */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
@@ -248,7 +301,6 @@ export default function EditUserPage({ params }: EditUserPageProps) {
           </CardContent>
         </Card>
 
-        {/* User Info */}
         <Card>
           <CardHeader>
             <CardTitle>Informasi Akun</CardTitle>
@@ -257,17 +309,16 @@ export default function EditUserPage({ params }: EditUserPageProps) {
             <div className="grid md:grid-cols-2 gap-4 text-sm">
               <div>
                 <strong className="text-foreground">Bergabung:</strong>
-                <p className="text-muted-foreground">{targetUser.createdAt.toLocaleDateString("id-ID")}</p>
+                <p className="text-muted-foreground">{new Date(targetUser.createdAt).toLocaleDateString("id-ID")}</p>
               </div>
               <div>
                 <strong className="text-foreground">Terakhir Diperbarui:</strong>
-                <p className="text-muted-foreground">{targetUser.updatedAt.toLocaleDateString("id-ID")}</p>
+                <p className="text-muted-foreground">{new Date(targetUser.updatedAt).toLocaleDateString("id-ID")}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-4">
           <Button type="submit" disabled={isLoading} className="flex-1">
             <Save className="mr-2 h-4 w-4" />
