@@ -2,12 +2,24 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { BookOpen, Users, Sparkles, Globe } from "lucide-react"
-import { getPublishedStories } from "@/lib/mock-data"
-import { getDatabaseService } from "@/lib/db-service"
 
 export default async function HomePage() {
-  const dbService = getDatabaseService()
-  const stories = await dbService.getPublishedStoriesFromDB(6) // Show last 6 inserted stories from database
+  // Fetch stories from the API instead of directly from DB
+  let stories = []
+  try {
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+    const response = await fetch(`${baseUrl}/api/stories?published=true`, {
+      cache: 'no-store'
+    })
+    const data = await response.json()
+    if (data.stories && Array.isArray(data.stories)) {
+      // API returns stories ordered by created_at DESC, so take first 6 which are the latest
+      stories = data.stories.slice(0, 6)
+    }
+  } catch (error) {
+    console.error('Error fetching stories from API:', error)
+    stories = []
+  }
 
   // Check if user is authenticated by calling the auth API
   const checkAuth = async () => {
@@ -38,6 +50,11 @@ export default async function HomePage() {
     }
     // Old format: string
     return typeof content === "string" ? content.substring(0, 150) + "..." : ""
+  }
+
+  const getStoryImage = (story: any) => {
+    // Prioritize cover image, then fall back to first illustration
+    return story.coverImage || story.illustrations[0] || "/placeholder.svg"
   }
 
   return (
@@ -137,7 +154,7 @@ export default async function HomePage() {
             <Card key={story.id} className="overflow-hidden hover:shadow-lg transition-shadow">
               <div className="aspect-video bg-muted relative">
                 <img
-                  src={story.illustrations[0] || "/placeholder.svg"}
+                  src={getStoryImage(story)}
                   alt={story.title}
                   className="w-full h-full object-cover"
                 />
