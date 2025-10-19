@@ -10,7 +10,7 @@ interface StoryReaderClientProps {
 export function StoryReaderClient({ story }: StoryReaderClientProps) {
   const handleProgressUpdate = (progress: any) => {
     // In a real app, this would save to database
-    console.log("Progress updated:", progress)
+    // Progress update handled
   }
 
   return (

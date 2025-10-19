@@ -151,7 +151,7 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
         setIsPlaying(false)
       } else {
         audioRef.current.play().catch((error) => {
-          console.error("Error playing audio:", error)
+          // Audio playback failed - this is normal for some browsers when user hasn't interacted with page yet
         })
         setIsPlaying(true)
       }
