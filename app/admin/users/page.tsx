@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,16 +17,41 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Plus, Search, MoreHorizontal, Edit, Trash2, Users, Shield, User, ArrowLeft } from "lucide-react"
+import { Plus, Search, MoreHorizontal, Edit, Trash2, Users, Shield, User, ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
-import { mockUsers } from "@/lib/mock-data"
 import type { User as UserType } from "@/lib/types"
 
 export default function UsersManagementPage() {
   const { user } = useAuth()
-  const [users, setUsers] = useState<UserType[]>(mockUsers)
+  const [users, setUsers] = useState<UserType[]>([])
   const [searchTerm, setSearchTerm] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchUsers()
+  }, [])
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await fetch("/api/admin/users")
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch users")
+      }
+      
+      const data = await response.json()
+      setUsers(data.users)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred")
+      console.error("Error fetching users:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   if (!user || user.role !== "admin") {
     return (
@@ -39,8 +64,21 @@ export default function UsersManagementPage() {
     )
   }
 
-  const handleDeleteUser = (userId: string) => {
-    setUsers(users.filter((u) => u.id !== userId))
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      const response = await fetch(`/api/admin/users?id=${userId}`, {
+        method: "DELETE",
+      })
+      
+      if (!response.ok) {
+        throw new Error("Failed to delete user")
+      }
+      
+      setUsers(users.filter((u) => u.id !== userId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user")
+      console.error("Error deleting user:", err)
+    }
   }
 
   const filteredUsers = users.filter(
@@ -93,6 +131,15 @@ export default function UsersManagementPage() {
           </Button>
         </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <Card className="mb-6 border-destructive bg-destructive/10">
+          <CardContent className="p-4">
+            <p className="text-destructive">{error}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       <div className="grid md:grid-cols-3 gap-6 mb-8">
@@ -147,78 +194,83 @@ export default function UsersManagementPage() {
 
       {/* Users List */}
       <div className="space-y-4">
-        {filteredUsers.map((userData) => (
-          <Card key={userData.id}>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center">
-                    {getRoleIcon(userData.role)}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-1">
-                      <h3 className="font-semibold text-foreground">{userData.name}</h3>
-                      {getRoleBadge(userData.role)}
+        {loading ? (
+          <div className="text-center py-12">
+            <Loader2 className="h-12 w-12 text-muted-foreground mx-auto mb-4 animate-spin" />
+            <p className="text-muted-foreground">Memuat pengguna...</p>
+          </div>
+        ) : filteredUsers.length > 0 ? (
+          filteredUsers.map((userData) => (
+            <Card key={userData.id}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center">
+                      {getRoleIcon(userData.role)}
                     </div>
-                    <p className="text-sm text-muted-foreground mb-1">{userData.email}</p>
-                    <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                      <span>Bergabung: {userData.createdAt.toLocaleDateString("id-ID")}</span>
-                      <span>Terakhir update: {userData.updatedAt.toLocaleDateString("id-ID")}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-1">
+                        <h3 className="font-semibold text-foreground">{userData.name}</h3>
+                        {getRoleBadge(userData.role)}
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-1">{userData.email}</p>
+                      <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                        <span>Bergabung: {new Date(userData.createdAt).toLocaleDateString("id-ID")}</span>
+                        <span>Terakhir update: {new Date(userData.updatedAt).toLocaleDateString("id-ID")}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center space-x-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem asChild>
-                        <Link href={`/admin/users/edit/${userData.id}`}>
-                          <Edit className="mr-2 h-4 w-4" />
-                          Edit
-                        </Link>
-                      </DropdownMenuItem>
-                      {userData.id !== user.id && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Hapus
-                            </DropdownMenuItem>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Hapus Pengguna</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Apakah Anda yakin ingin menghapus pengguna "{userData.name}"? Tindakan ini tidak dapat
-                                dibatalkan dan akan menghapus semua data terkait.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Batal</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteUser(userData.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
+                  <div className="flex items-center space-x-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link href={`/admin/users/edit/${userData.id}`}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            Edit
+                          </Link>
+                        </DropdownMenuItem>
+                        {userData.id !== user.id && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" />
                                 Hapus
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                              </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Hapus Pengguna</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Apakah Anda yakin ingin menghapus pengguna "{userData.name}"? Tindakan ini tidak dapat
+                                  dibatalkan dan akan menghapus semua data terkait.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Batal</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteUser(userData.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Hapus
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-
-        {filteredUsers.length === 0 && (
+              </CardContent>
+            </Card>
+          ))
+        ) : (
           <div className="text-center py-12">
             <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium text-foreground mb-2">
