@@ -135,14 +135,6 @@ export default function LoginPage() {
                 )}
               </Button>
             </form>
-
-            <div className="mt-4 text-center text-sm text-muted-foreground">
-              <p className="font-semibold mb-2">Demo Login:</p>
-              <div className="space-y-1 text-xs">
-                <p><strong>Admin:</strong> admin@bukusetaman.com / admin123</p>
-                <p><strong>Guru:</strong> sari@teacher.com / teacher123</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
 

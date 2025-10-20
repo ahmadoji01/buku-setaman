@@ -139,9 +139,9 @@ const setupDatabase = () => {
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
       
-      userStmt.run('1', 'Admin User', 'admin@bukusetaman.com', 'admin123', 'admin', '2024-01-01 00:00:00', '2024-01-01 00:00:00');
-      userStmt.run('2', 'Ibu Sari', 'sari@teacher.com', 'teacher123', 'teacher', '2024-01-15 00:00:00', '2024-01-15 00:00:00');
-      userStmt.run('3', 'Pak Budi', 'budi@teacher.com', 'teacher123', 'teacher', '2024-01-20 00:00:00', '2024-01-20 00:00:00');
+      userStmt.run('1', 'Admin User', 'admin@bukusetaman.com', 'buku-setaman-admin-123', 'admin', '2024-01-01 00:00:00', '2024-01-01 00:00:00');
+      userStmt.run('2', 'Ibu Sari', 'sari@teacher.com', 'buku-setaman-teacher-123', 'teacher', '2024-01-15 00:00:00', '2024-01-15 00:00:00');
+      userStmt.run('3', 'Pak Budi', 'budi@teacher.com', 'buku-setaman-teacher-123', 'teacher', '2024-01-20 00:00:00', '2024-01-20 00:00:00');
       
       // Insert stories
       const storyStmt = db.prepare(`
