@@ -8,18 +8,14 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   ArrowLeft,
   Save,
   Eye,
-  Sparkles,
   ImageIcon,
   Volume2,
   Loader2,
-  CheckCircle,
-  XCircle,
   Plus,
   Trash2,
   MoveUp,
@@ -27,7 +23,6 @@ import {
   Upload,
   X,
   AlertTriangle,
-  Wand2,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
@@ -48,7 +43,6 @@ export default function CreateStoryPage() {
   const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [currentLanguageGenerating, setCurrentLanguageGenerating] = useState<string | null>(null)
 
   const [formData, setFormData] = useState({
     title: "",
@@ -143,172 +137,6 @@ export default function CreateStoryPage() {
       )
     }))
     setError(null)
-  }
-
-  const generateIllustration = async (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number) => {
-    const page = formData[language][pageIndex]
-    if (!page.text.trim()) {
-      setError('Masukkan teks halaman terlebih dahulu')
-      return
-    }
-
-    try {
-      setFormData(prev => ({
-        ...prev,
-        [language]: prev[language].map((p, i) =>
-          i === pageIndex ? { ...p, generatingIllustration: true } : p
-        )
-      }))
-
-      const response = await fetch('/api/generate-illustration', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: page.text,
-          language,
-          pageNumber: page.pageNumber
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal menghasilkan ilustrasi')
-      }
-
-      // Convert base64 to File
-      const base64Data = data.illustration.split(',')[1] || data.illustration
-      const byteCharacters = atob(base64Data)
-      const byteNumbers = new Array(byteCharacters.length)
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i)
-      }
-      const byteArray = new Uint8Array(byteNumbers)
-      const blob = new Blob([byteArray], { type: 'image/png' })
-      const file = new File([blob], `illustration_${language}_${pageIndex}.png`, { type: 'image/png' })
-
-      setFormData(prev => ({
-        ...prev,
-        [language]: prev[language].map((p, i) =>
-          i === pageIndex 
-            ? { ...p, illustration: data.illustration, illustrationFile: file, generatingIllustration: false }
-            : p
-        )
-      }))
-      setError(null)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Gagal menghasilkan ilustrasi'
-      setError(errorMessage)
-      setFormData(prev => ({
-        ...prev,
-        [language]: prev[language].map((p, i) =>
-          i === pageIndex ? { ...p, generatingIllustration: false } : p
-        )
-      }))
-    }
-  }
-
-  const generateAudio = async (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number) => {
-    const page = formData[language][pageIndex]
-    if (!page.text.trim()) {
-      setError('Masukkan teks halaman terlebih dahulu')
-      return
-    }
-
-    try {
-      setFormData(prev => ({
-        ...prev,
-        [language]: prev[language].map((p, i) =>
-          i === pageIndex ? { ...p, generatingAudio: true } : p
-        )
-      }))
-
-      const response = await fetch('/api/generate-audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: page.text,
-          language,
-          pageNumber: page.pageNumber
-        })
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Gagal menghasilkan audio')
-      }
-
-      // Convert base64 to File
-      try {
-        const base64Data = data.audio.split(',')[1] || data.audio
-        const byteCharacters = atob(base64Data)
-        const byteNumbers = new Array(byteCharacters.length)
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i)
-        }
-        const byteArray = new Uint8Array(byteNumbers)
-        
-        // Use more generic audio type for better compatibility
-        const blob = new Blob([byteArray], { type: 'audio/mpeg' })
-        const file = new File([blob], `audio_${language}_${pageIndex}.mp3`, { type: 'audio/mpeg' })
-        
-        // Verify file was created properly
-        if (!file || file.size === 0) {
-          throw new Error('Failed to create audio file')
-        }
-      } catch (conversionError) {
-        throw new Error('Failed to process generated audio: ' + (conversionError instanceof Error ? conversionError.message : 'Unknown error'))
-      }
-
-      setFormData(prev => ({
-        ...prev,
-        [language]: prev[language].map((p, i) =>
-          i === pageIndex 
-            ? { ...p, audioFile: file, generatingAudio: false }
-            : p
-        )
-      }))
-      setError(null)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Gagal menghasilkan audio'
-      setError(errorMessage)
-      setFormData(prev => ({
-        ...prev,
-        [language]: prev[language].map((p, i) =>
-          i === pageIndex ? { ...p, generatingAudio: false } : p
-        )
-      }))
-    }
-  }
-
-  const generateAllForLanguage = async (language: 'indonesian' | 'sundanese' | 'english') => {
-    const pages = formData[language].filter(p => p.text.trim())
-    if (pages.length === 0) {
-      setError('Tambahkan teks untuk minimal satu halaman')
-      return
-    }
-
-    setCurrentLanguageGenerating(language)
-    try {
-      for (let i = 0; i < formData[language].length; i++) {
-        if (formData[language][i].text.trim()) {
-          if (!formData[language][i].illustration) {
-            await generateIllustration(language, i)
-          }
-          // Add small delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 500))
-          
-          if (!formData[language][i].audioFile) {
-            await generateAudio(language, i)
-          }
-          // Add small delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 500))
-        }
-      }
-    } finally {
-      setCurrentLanguageGenerating(null)
-    }
   }
 
   const addPage = (language: 'indonesian' | 'sundanese' | 'english') => {
@@ -468,25 +296,6 @@ export default function CreateStoryPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <Label>Halaman Cerita {langLabel} {isRequired ? '*' : '(Opsional)'}</Label>
           <div className="flex gap-2">
-            <Button 
-              type="button" 
-              variant="outline" 
-              size="sm" 
-              onClick={() => generateAllForLanguage(language)}
-              disabled={currentLanguageGenerating === language || !pages.some(p => p.text.trim())}
-            >
-              {currentLanguageGenerating === language ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Wand2 className="h-4 w-4 mr-2" />
-                  Generate All
-                </>
-              )}
-            </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => addPage(language)}>
               <Plus className="h-4 w-4 mr-2" />
               Tambah Halaman
@@ -533,25 +342,6 @@ export default function CreateStoryPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <Label>Ilustrasi Halaman (Opsional)</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => generateIllustration(language, index)}
-                      disabled={!page.text.trim() || page.generatingIllustration}
-                    >
-                      {page.generatingIllustration ? (
-                        <>
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          AI
-                        </>
-                      ) : (
-                        <>
-                          <Wand2 className="h-3 w-3 mr-1" />
-                          AI
-                        </>
-                      )}
-                    </Button>
                   </div>
                   <div className="mt-1">
                     {page.illustration ? (
@@ -593,25 +383,6 @@ export default function CreateStoryPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <Label>Audio Halaman (Opsional)</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => generateAudio(language, index)}
-                      disabled={!page.text.trim() || page.generatingAudio}
-                    >
-                      {page.generatingAudio ? (
-                        <>
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          AI
-                        </>
-                      ) : (
-                        <>
-                          <Wand2 className="h-3 w-3 mr-1" />
-                          AI
-                        </>
-                      )}
-                    </Button>
                   </div>
                   <div className="mt-1 space-y-2">
                     {page.audioFile ? (
