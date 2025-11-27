@@ -1,4 +1,6 @@
+// app/api/stories/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getDatabaseService } from '@/lib/db-service';
 
 export async function GET(
@@ -255,6 +257,18 @@ export async function PUT(
       });
     }
 
+    // Clear cache after successful update
+    try {
+      revalidatePath('/dashboard');
+      revalidatePath('/stories');
+      revalidatePath(`/stories/${storyId}`);
+      revalidatePath(`/api/stories`);
+      revalidatePath(`/api/stories/${storyId}`);
+    } catch (error) {
+      console.error('Cache revalidation error:', error);
+      // Don't fail the request if cache revalidation fails
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Story updated successfully'
@@ -285,6 +299,18 @@ export async function DELETE(
         { error: 'Story not found' },
         { status: 404 }
       );
+    }
+
+    // Clear cache after successful deletion
+    try {
+      revalidatePath('/dashboard');
+      revalidatePath('/stories');
+      revalidatePath(`/stories/${storyId}`);
+      revalidatePath(`/api/stories`);
+      revalidatePath(`/api/stories/${storyId}`);
+    } catch (error) {
+      console.error('Cache revalidation error:', error);
+      // Don't fail the request if cache revalidation fails
     }
 
     return NextResponse.json({

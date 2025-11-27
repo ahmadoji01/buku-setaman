@@ -1,4 +1,6 @@
+// app/api/stories/route.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getDatabaseService } from '@/lib/db-service';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
@@ -318,6 +320,20 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+    }
+
+    // Clear cache after successful upload
+    try {
+      // Revalidate all relevant paths
+      revalidatePath('/dashboard');
+      revalidatePath('/dashboard/create');
+      revalidatePath('/stories');
+      revalidatePath(`/stories/${storyId}`);
+      revalidatePath(`/api/stories`);
+      revalidatePath(`/api/stories/${storyId}`);
+    } catch (error) {
+      console.error('Cache revalidation error:', error);
+      // Don't fail the request if cache revalidation fails
     }
 
     return NextResponse.json({
