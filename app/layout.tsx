@@ -21,6 +21,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
+      <head>
+        <link rel="icon" href="icon.png"></link>
+      </head>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
         <AuthProvider>
           <Suspense fallback={<div>Loading...</div>}>
