@@ -33,6 +33,8 @@ const setupDatabase = () => {
           cover_image TEXT,
           author_id TEXT NOT NULL,
           author_name TEXT NOT NULL,
+          type TEXT CHECK(type IN ('manual', 'gemini')) NOT NULL,
+          gemini_link TEXT,
           is_published BOOLEAN NOT NULL DEFAULT FALSE,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
