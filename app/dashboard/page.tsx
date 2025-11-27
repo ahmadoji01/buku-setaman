@@ -89,7 +89,6 @@ export default function DashboardPage() {
   const handleTogglePublish = (storyId: string) => {
     setStories(stories.map((story) => (story.id === storyId ? { ...story, isPublished: !story.isPublished } : story)))
   }
-
   const getStoryPreview = (story: Story) => {
     const indonesianContent = story.content.indonesian
     if (Array.isArray(indonesianContent)) {
@@ -235,6 +234,10 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: Stor
     )
   }
 
+  const getStoryImage = (story: Story) => {
+    return story.coverImage || story.illustrations?.[0] || "/placeholder.svg"
+  }
+
   return (
     <div className="grid gap-6">
       {stories.map((story) => (
@@ -243,7 +246,7 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: Stor
             {/* Story Thumbnail */}
             <div className="w-32 h-24 bg-muted flex-shrink-0">
               <img
-                src={story.coverImage || story.illustrations[0] || "/placeholder.svg"}
+                src={getStoryImage(story)}
                 alt={story.title}
                 className="w-full h-full object-cover"
               />
