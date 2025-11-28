@@ -68,7 +68,7 @@ export function Footer() {
             <p className="text-sm text-muted-foreground mb-2">Program Hibah Pengabdian Masyarakat</p>
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2 h-10 bg-white/50 rounded px-2">
-                <span className="text-xs font-semibold text-muted-foreground">Kemdiktisaintek</span>
+                <span className="text-xs font-semibold text-muted-foreground">DPPM Kemdiktisaintek</span>
               </div>
               <div className="flex items-center gap-2 h-10 bg-white/50 rounded px-2">
                 <span className="text-xs font-semibold text-muted-foreground">Universitas Suryakancana</span>

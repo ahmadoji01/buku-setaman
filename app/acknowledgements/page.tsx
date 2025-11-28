@@ -29,13 +29,12 @@ export default function AcknowledgementsPage() {
                   <img src="logo-diktisaintek.png" max-width="100px" height="auto"></img>
                 </span>
               </div>
-              Kementerian Pendidikan, Kebudayaan, Riset, dan Teknologi (Kemdiktisaintek)
+              Direktorat Jenderal Riset dan Pengembangan melalui Direktorat Penelitian dan Pengabdian kepada Masyarakat (DPPM) Kementerian Pendidikan Tinggi, Sains, dan Teknologi
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">
-              Buku Setaman adalah proyek yang didukung penuh melalui Program Hibah Pengabdian kepada Masyarakat dari
-              Kemdiktisaintek. Dukungan ini memungkinkan kami untuk mengembangkan platform inovatif yang memberdayakan
+              Buku Setaman adalah proyek yang didukung penuh melalui Program Hibah Pengabdian kepada Masyarakat dari Direktorat Jenderal Riset dan Pengembangan melalui Direktorat Penelitian dan Pengabdian kepada Masyarakat (DPPM) Kementerian Pendidikan Tinggi, Sains, dan Teknologi. Dukungan ini memungkinkan kami untuk mengembangkan platform inovatif yang memberdayakan
               guru-guru Indonesia untuk menciptakan konten edukatif berkualitas tinggi dengan dukungan teknologi AI.
             </p>
             <p className="text-sm text-muted-foreground">

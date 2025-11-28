@@ -14,22 +14,28 @@ interface TeamMember {
 
 const teamMembers: TeamMember[] = [
   {
-    name: "Dr. Nama Ketua Tim",
-    role: "Ketua Tim / Peneliti Utama",
+    name: "Dr. Aan Hasanah, S.Pd, M.Pd",
+    role: "Ketua Tim",
     description:
-      "Pemimpin proyek dengan expertise dalam teknologi pendidikan dan pengembangan platform digital. Bertanggung jawab atas visi keseluruhan dan strategi pengembangan Buku Setaman.",
+      "Dr. Aan Hasanah adalah pendidik dan peneliti di bidang Pendidikan Bahasa dan Sastra Indonesia. Ia meraih gelar S-1 dan S-2 dari Universitas Suryakancana serta gelar doktor dari Universitas Pendidikan Indonesia. Berpengalaman sebagai dosen, pengembang kurikulum, dan asesor beban kerja dosen, Dr. Aan kini menjabat sebagai Ketua Program Studi Magister PBSI. Ia aktif menulis artikel ilmiah, buku, dan antologi puisi, serta memperoleh hibah penelitian disertasi doktor. Minatnya mencakup sastra lisan dan transformasi sastra daerah, dengan karya seperti Tradisi Bertani di Tatar Sunda dan Toponimi Kabupaten Cianjur.",
   },
   {
-    name: "Nama Anggota Tim 1",
-    role: "Anggota Tim / Pengembang",
+    name: "Dr. Nia Kurniawati, S.Pd, M.Pd",
+    role: "Anggota Tim",
     description:
-      "Spesialis dalam pengembangan teknologi AI dan backend system. Memastikan infrastruktur platform berjalan optimal dan inovasi teknologi terlaksana dengan baik.",
+      "Dr. Nia Kurniawati, M.Pd., adalah dosen di Program Pascasarjana Universitas Suryakancana, sekaligus Founder Skybridge Learning Center. Ia memiliki latar belakang pendidikan Bahasa Inggris dengan gelar sarjana dan magister dari Universitas Pendidikan Indonesia, serta doktor Linguistik Terapan dari Universitas Negeri Jakarta. Berpengalaman sebagai instruktur, dosen, dan koordinator pusat kajian literasi, Dr. Nia aktif menjadi presenter di konferensi internasional, penulis artikel ilmiah terindeks Scopus, serta pegiat literasi. Ia juga dikenal sebagai MC dan kontributor media cetak.",
   },
   {
-    name: "Nama Anggota Tim 2",
-    role: "Anggota Tim / Desainer & Peneliti",
+    name: "Aprilla Adawiyah, S.Pd, M.Pd",
+    role: "Anggota Tim",
     description:
-      "Ahli dalam desain user experience dan penelitian pendidikan. Memastikan platform user-friendly dan disesuaikan dengan kebutuhan pendidik serta siswa Indonesia.",
+      "Aprilla Adawiyah, S.Pd, M.Pd adalah pendidik yang aktif dalam dunia literasi anak dan sastra. Ia bergabung dalam berbagai organisasi seperti Asosiasi Linguistik Terapan Indonesia dan Persatuan Pengajar Bahasa Indonesia, serta komunitas literasi Cianjur Read Aloud. Aprilla memiliki banyak karya, termasuk buku cerita anak dwibahasa yang diterbitkan oleh Kemendikbudristek, seperti Taci Ngalalana dan Aira Bisa Ngibing. Prestasinya meliputi penulis naskah terpilih dalam sayembara cerita anak berbahasa daerah dan lolos kurasi TPN X. Ia berkomitmen mengembangkan literasi berbasis kearifan lokal.",
+  },
+  {
+    name: "Ahmad Ridwan Fauzi, S.Kom, M.Sc, MBA",
+    role: "Anggota Tim",
+    description:
+      "Ahmad Ridwan Fauzi, S.Kom, M.Sc, MBA adalah lulusan Teknik Informatika ITS dan meraih gelar M.Sc. di Hokkaido University serta MBA dari EDHEC Business School. Berpengalaman lebih dari 6 tahun dalam pengembangan bisnis dan teknologi, termasuk sebagai co-founder startup di Jepang dan software engineer di sektor fintech. Saat ini menjabat sebagai Operating Director PT Envision Lab Studio, mengembangkan solusi berbasis LLM untuk industri manufaktur dan pendidikan. Aktif sebagai dosen di Telkom University Jakarta.",
   },
 ]
 
