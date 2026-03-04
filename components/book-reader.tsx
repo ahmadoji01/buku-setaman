@@ -56,10 +56,13 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
 
       for (let i = 0; i < sentences.length; i += 2) {
         const pageContent = sentences.slice(i, i + 2).join(". ") + (i + 2 < sentences.length ? "." : "")
+        const pageIndex = Math.floor(i / 2)
         pages.push({
-          pageNumber: Math.floor(i / 2) + 1,
+          pageNumber: pageIndex + 1,
           text: pageContent,
-          illustration: story.illustrations[Math.floor(i / 2)] || story.illustrations[0],
+          illustration: story.illustrations?.[pageIndex] || story.illustrations?.[0],
+          // ✅ PERBAIKAN: Tambahkan audio dari audioFiles jika tersedia
+          audio: story.audioFiles?.[selectedLanguage] || null,
         })
       }
 
@@ -69,7 +72,8 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
             {
               pageNumber: 1,
               text: content,
-              illustration: story.illustrations[0],
+              illustration: story.illustrations?.[0],
+              audio: story.audioFiles?.[selectedLanguage] || null,
             },
           ]
     }
@@ -84,7 +88,8 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
       {
         pageNumber: 1,
         text: typeof fallbackContent === "string" ? fallbackContent : "",
-        illustration: story.illustrations[0],
+        illustration: story.illustrations?.[0],
+        audio: story.audioFiles?.["indonesian"] || null,
       },
     ]
   }
@@ -111,6 +116,17 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
   const currentPageIllustration = currentPageData?.illustration
   const currentPageAudio = currentPageData?.audio
   const isCoverPage = currentPageData?.isCover === true
+  
+  useEffect(() => {
+    if (currentPageData?.audio) {
+      console.log('[BookReader Audio]', {
+        page: currentPage,
+        language: selectedLanguage,
+        audioUrl: currentPageData.audio,
+        audioFromPageData: !!currentPageData.audio,
+      })
+    }
+  }, [currentPageData, currentPage, selectedLanguage])
 
   // Handle page navigation
   const goToNextPage = () => {
@@ -263,17 +279,29 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
-      {/* Audio element for per-page audio */}
-      <audio
-        ref={audioRef}
-        src={currentPageAudio || ""}
-        onTimeUpdate={handleAudioTimeUpdate}
-        onLoadedMetadata={handleAudioLoadedMetadata}
-        onEnded={handleAudioEnd}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        crossOrigin="anonymous"
-      />
+      {/* ✅ PERBAIKAN: Audio element dengan better error handling dan logging */}
+      {currentPageAudio && (
+        <audio
+          key={`audio-${currentPageAudio}`}
+          ref={audioRef}
+          onTimeUpdate={handleAudioTimeUpdate}
+          onLoadedMetadata={handleAudioLoadedMetadata}
+          onEnded={handleAudioEnd}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onError={(e) => {
+            console.error('[BookReader Audio Error]', {
+              src: currentPageAudio,
+              errorCode: e.currentTarget.error?.code,
+              errorMessage: e.currentTarget.error?.message,
+            })
+          }}
+          crossOrigin="anonymous"
+        >
+          <source src={currentPageAudio} type="audio/mpeg" />
+          <source src={currentPageAudio} type="audio/wav" />
+        </audio>
+      )}
 
       {/* Controls Bar */}
       <div className="flex items-center justify-between bg-card p-4 rounded-lg border flex-wrap gap-4">
@@ -293,7 +321,7 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
           </Select>
 
           {/* Audio Controls - Only show if current page has audio */}
-          {currentPageAudio && (
+          {currentPageAudio ? (
             <div className="flex items-center space-x-2">
               <Button variant="outline" size="sm" onClick={toggleAudio}>
                 {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
@@ -304,6 +332,10 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
               <Button variant="outline" size="sm" onClick={handleResetAudio}>
                 <RotateCcw className="h-4 w-4" />
               </Button>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              🔇 Audio tidak tersedia untuk halaman ini
             </div>
           )}
         </div>

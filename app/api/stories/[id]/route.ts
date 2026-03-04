@@ -100,12 +100,16 @@ export async function GET(
       if (!content[page.language]) {
         content[page.language] = [];
       }
-      content[page.language].push({
+      
+      // ✅ PERBAIKAN: Include audio URL dari page_audio_url
+      const pageObject: any = {
         pageNumber: page.page_number,
         text: page.text,
         illustration: page.illustration,
-        audio: page.page_audio_url || null
-      });
+        audio: page.page_audio_url || null, // ✅ Audio URL dari per-page structure
+      };
+      
+      content[page.language].push(pageObject);
       
       // Store first page's audio as fallback for legacy audioFiles object
       if (page.page_audio_url && !audioFilesByLanguage[page.language]) {
