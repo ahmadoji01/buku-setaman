@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { BookOpen, Clock, User } from "lucide-react"
+import { BookOpen, Clock, User, Cloud } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -18,11 +18,13 @@ interface Story {
   createdAt: string
   updatedAt: string
   illustrations?: string[]
+  gemini_source_url?: string | null
 }
 
 export default function StoriesPage() {
   const [stories, setStories] = useState<Story[]>([])
   const [loading, setLoading] = useState(true)
+  const [filterMode, setFilterMode] = useState<'all' | 'gemini' | 'manual'>('all')
 
   useEffect(() => {
     const fetchStories = async () => {
@@ -57,6 +59,20 @@ export default function StoriesPage() {
     return new Date(dateString).toLocaleDateString("id-ID")
   }
 
+  const isGeminiStory = (story: Story) => {
+    return !!story.gemini_source_url
+  }
+
+  // Filter stories
+  const filteredStories = stories.filter(story => {
+    if (filterMode === 'gemini') return isGeminiStory(story)
+    if (filterMode === 'manual') return !isGeminiStory(story)
+    return true
+  })
+
+  const geminiCount = stories.filter(isGeminiStory).length
+  const manualCount = stories.length - geminiCount
+
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center">
@@ -74,15 +90,47 @@ export default function StoriesPage() {
         </p>
       </div>
 
-      {stories.length === 0 ? (
+      {/* Filter Tabs */}
+      {stories.length > 0 && (
+        <div className="flex gap-2 mb-8 flex-wrap">
+          <Button
+            variant={filterMode === 'all' ? 'default' : 'outline'}
+            onClick={() => setFilterMode('all')}
+          >
+            Semua Cerita ({stories.length})
+          </Button>
+          <Button
+            variant={filterMode === 'gemini' ? 'default' : 'outline'}
+            onClick={() => setFilterMode('gemini')}
+            className="gap-2"
+          >
+            <Cloud className="h-4 w-4" />
+            Gemini ({geminiCount})
+          </Button>
+          <Button
+            variant={filterMode === 'manual' ? 'default' : 'outline'}
+            onClick={() => setFilterMode('manual')}
+          >
+            Manual ({manualCount})
+          </Button>
+        </div>
+      )}
+
+      {filteredStories.length === 0 ? (
         <div className="text-center py-12">
           <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">Belum Ada Cerita</h3>
-          <p className="text-muted-foreground">Cerita akan muncul di sini setelah guru mengunggahnya.</p>
+          <h3 className="text-lg font-medium text-foreground mb-2">
+            {stories.length === 0 ? 'Belum Ada Cerita' : `Tidak ada cerita ${filterMode}`}
+          </h3>
+          <p className="text-muted-foreground">
+            {stories.length === 0 
+              ? 'Cerita akan muncul di sini setelah guru mengunggahnya.' 
+              : 'Coba filter yang berbeda untuk melihat cerita lainnya.'}
+          </p>
         </div>
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {stories.map((story) => (
+          {filteredStories.map((story) => (
             <Card key={story.id} className="overflow-hidden hover:shadow-lg transition-shadow group">
               {/* Story Image */}
               <div className="aspect-video bg-muted relative overflow-hidden">
@@ -94,12 +142,22 @@ export default function StoriesPage() {
                     (e.target as HTMLImageElement).src = "/placeholder.svg"
                   }}
                 />
-                <div className="absolute top-2 right-2">
+                <div className="absolute top-2 left-2 flex gap-2">
                   <Badge variant="secondary" className="bg-background/80 backdrop-blur-sm">
                     <BookOpen className="h-3 w-3 mr-1" />
                     Cerita
                   </Badge>
                 </div>
+                
+                {/* Gemini Badge */}
+                {isGeminiStory(story) && (
+                  <div className="absolute top-2 right-2">
+                    <Badge className="bg-blue-500/90 hover:bg-blue-600 flex items-center gap-1">
+                      <Cloud className="h-3 w-3" />
+                      Gemini
+                    </Badge>
+                  </div>
+                )}
               </div>
 
               {/* Story Header */}
@@ -125,12 +183,21 @@ export default function StoriesPage() {
                 <div className="flex flex-wrap gap-1 mb-4">
                   {Object.keys(story.content || {}).map((lang) => (
                     <Badge key={lang} variant="outline" className="text-xs">
-                      {lang === "indonesian" && "ID"}
-                      {lang === "sundanese" && "SU"}
-                      {lang === "english" && "EN"}
+                      {lang === "indonesian" && "🇮🇩 ID"}
+                      {lang === "sundanese" && "🗣️ SU"}
+                      {lang === "english" && "🇬🇧 EN"}
                     </Badge>
                   ))}
                 </div>
+
+                {/* Gemini Info */}
+                {isGeminiStory(story) && (
+                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded p-2 mb-4">
+                    <p className="text-xs text-blue-900 dark:text-blue-100">
+                      📚 Dari Gemini Storybook
+                    </p>
+                  </div>
+                )}
 
                 <Button asChild className="w-full">
                   <Link href={`/stories/${story.id}`}>

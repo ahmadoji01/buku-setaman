@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Plus, BookOpen, Eye, Edit, Trash2, MoreHorizontal, Upload, BarChart3 } from "lucide-react"
+import { Plus, BookOpen, Eye, Edit, Trash2, MoreHorizontal, Upload, BarChart3, Cloud } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
 import type { Story } from "@/lib/types"
@@ -36,7 +36,6 @@ export default function DashboardPage() {
         const data = await response.json()
 
         if (response.ok && Array.isArray(data.stories)) {
-          // Ensure stories have the expected structure
           const formattedStories = data.stories.map((story: any) => ({
             ...story,
             illustrations: story.illustrations || [],
@@ -81,6 +80,8 @@ export default function DashboardPage() {
 
   const publishedStories = stories.filter((story) => story.isPublished)
   const draftStories = stories.filter((story) => !story.isPublished)
+  const geminiStories = stories.filter((story) => story.gemini_source_url)
+  const manualStories = stories.filter((story) => !story.gemini_source_url)
 
   const handleDeleteStory = (storyId: string) => {
     setStories(stories.filter((story) => story.id !== storyId))
@@ -89,10 +90,10 @@ export default function DashboardPage() {
   const handleTogglePublish = (storyId: string) => {
     setStories(stories.map((story) => (story.id === storyId ? { ...story, isPublished: !story.isPublished } : story)))
   }
+
   const getStoryPreview = (story: Story) => {
     const indonesianContent = story.content.indonesian
     if (Array.isArray(indonesianContent)) {
-      // New format: array of StoryPage objects
       return (
         indonesianContent
           .map((page) => page.text)
@@ -100,8 +101,11 @@ export default function DashboardPage() {
           .substring(0, 100) + "..."
       )
     }
-    // Old format: string
     return typeof indonesianContent === "string" ? indonesianContent.substring(0, 100) + "..." : ""
+  }
+
+  const isGeminiStory = (story: Story) => {
+    return !!story.gemini_source_url
   }
 
   return (
@@ -113,7 +117,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid md:grid-cols-4 gap-6 mb-8">
+      <div className="grid md:grid-cols-5 gap-6 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Cerita</CardTitle>
@@ -141,6 +145,16 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-primary">{draftStories.length}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Gemini Import</CardTitle>
+            <Cloud className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{geminiStories.length}</div>
           </CardContent>
         </Card>
 
@@ -174,9 +188,13 @@ export default function DashboardPage() {
       {/* Stories Management */}
       <Tabs defaultValue="all" className="space-y-6">
         <TabsList>
-          <TabsTrigger value="all">Semua Cerita ({stories.length})</TabsTrigger>
+          <TabsTrigger value="all">Semua ({stories.length})</TabsTrigger>
           <TabsTrigger value="published">Dipublikasikan ({publishedStories.length})</TabsTrigger>
           <TabsTrigger value="drafts">Draft ({draftStories.length})</TabsTrigger>
+          <TabsTrigger value="gemini" className="gap-2">
+            <Cloud className="h-4 w-4" />
+            Gemini ({geminiStories.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="all">
@@ -185,6 +203,7 @@ export default function DashboardPage() {
             onDelete={handleDeleteStory}
             onTogglePublish={handleTogglePublish}
             getStoryPreview={getStoryPreview}
+            isGeminiStory={isGeminiStory}
           />
         </TabsContent>
 
@@ -194,6 +213,7 @@ export default function DashboardPage() {
             onDelete={handleDeleteStory}
             onTogglePublish={handleTogglePublish}
             getStoryPreview={getStoryPreview}
+            isGeminiStory={isGeminiStory}
           />
         </TabsContent>
 
@@ -203,6 +223,17 @@ export default function DashboardPage() {
             onDelete={handleDeleteStory}
             onTogglePublish={handleTogglePublish}
             getStoryPreview={getStoryPreview}
+            isGeminiStory={isGeminiStory}
+          />
+        </TabsContent>
+
+        <TabsContent value="gemini">
+          <StoryList
+            stories={geminiStories}
+            onDelete={handleDeleteStory}
+            onTogglePublish={handleTogglePublish}
+            getStoryPreview={getStoryPreview}
+            isGeminiStory={isGeminiStory}
           />
         </TabsContent>
       </Tabs>
@@ -215,9 +246,10 @@ interface StoryListProps {
   onDelete: (storyId: string) => void
   onTogglePublish: (storyId: string) => void
   getStoryPreview: (story: Story) => string
+  isGeminiStory: (story: Story) => boolean
 }
 
-function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: StoryListProps) {
+function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview, isGeminiStory }: StoryListProps) {
   if (stories.length === 0) {
     return (
       <div className="text-center py-12">
@@ -244,12 +276,17 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: Stor
         <Card key={story.id} className="overflow-hidden">
           <div className="flex">
             {/* Story Thumbnail */}
-            <div className="w-32 h-24 bg-muted flex-shrink-0">
+            <div className="w-32 h-24 bg-muted flex-shrink-0 relative">
               <img
                 src={getStoryImage(story)}
                 alt={story.title}
                 className="w-full h-full object-cover"
               />
+              {isGeminiStory(story) && (
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-transparent flex items-center justify-center">
+                  <Cloud className="h-5 w-5 text-blue-100" />
+                </div>
+              )}
             </div>
 
             {/* Story Info */}
@@ -261,12 +298,21 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: Stor
                     <Badge variant={story.isPublished ? "default" : "secondary"}>
                       {story.isPublished ? "Dipublikasikan" : "Draft"}
                     </Badge>
+                    {isGeminiStory(story) && (
+                      <Badge className="bg-blue-500/90 flex items-center gap-1">
+                        <Cloud className="h-3 w-3" />
+                        Gemini
+                      </Badge>
+                    )}
                   </div>
 
                   <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{getStoryPreview(story)}</p>
 
                   <div className="flex items-center space-x-4 text-xs text-muted-foreground">
                     <span>Bahasa: {Object.keys(story.content).length}</span>
+                    {isGeminiStory(story) && (
+                      <span className="text-blue-600">📚 Dari Gemini Storybook</span>
+                    )}
                   </div>
                 </div>
 
@@ -314,8 +360,7 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview }: Stor
                         <AlertDialogHeader>
                           <AlertDialogTitle>Hapus Cerita</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Apakah Anda yakin ingin menghapus cerita "{story.title}"? Tindakan ini tidak dapat
-                            dibatalkan.
+                            Apakah Anda yakin ingin menghapus cerita "{story.title}"? Tindakan ini tidak dapat dibatalkan.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

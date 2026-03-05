@@ -178,6 +178,7 @@ export async function POST(request: NextRequest) {
     const authorId = formData.get('authorId') as string;
     const authorName = formData.get('authorName') as string;
     const isPublished = formData.get('isPublished') === 'true';
+    const geminiSourceUrl = formData.get('geminiSourceUrl') as string || null;
     const contentStr = formData.get('content') as string;
 
     if (!title || !contentStr || !authorId || !authorName) {
@@ -221,8 +222,18 @@ export async function POST(request: NextRequest) {
     }
 
     const insertStoryQuery = `
-      INSERT INTO stories (id, title, cover_image, author_id, author_name, is_published, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO stories (
+        id, 
+        title, 
+        cover_image, 
+        author_id, 
+        author_name, 
+        is_published,
+        gemini_source_url,
+        created_at, 
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `;
 
     try {
@@ -232,7 +243,8 @@ export async function POST(request: NextRequest) {
         coverImagePath,
         authorId,
         authorName,
-        isPublished ? 1 : 0
+        isPublished ? 1 : 0,
+        geminiSourceUrl
       ]);
     } catch (error) {
       return NextResponse.json(

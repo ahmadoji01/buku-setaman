@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { BookOpen, Users, Sparkles, Globe } from "lucide-react"
+import { BookOpen, Users, Sparkles, Globe, Cloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 
 interface Story {
   id: string
@@ -13,6 +14,7 @@ interface Story {
   content: Record<string, any>
   authorName: string
   illustrations?: string[]
+  gemini_source_url?: string | null
 }
 
 export default function HomePage() {
@@ -55,6 +57,10 @@ export default function HomePage() {
     return story.coverImage || story.illustrations?.[0] || "/placeholder.svg"
   }
 
+  const isGeminiStory = (story: Story) => {
+    return !!story.gemini_source_url
+  }
+
   return (
     <div className="space-y-16 py-8">
       {/* Hero Section */}
@@ -64,7 +70,7 @@ export default function HomePage() {
             Selamat Datang di <span className="text-primary">Buku Setaman</span>
           </h1>
           <p className="text-xl text-muted-foreground mb-8 text-pretty">
-            Platform cerita edukatif dengan teknologi AI yang membantu guru membuat cerita interaktif dalam bahasa
+            Platform cerita edukatif dengan teknologi AI dan Gemini Storybook yang membantu guru membuat cerita interaktif dalam bahasa
             Indonesia, Sunda, dan Inggris
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -127,13 +133,13 @@ export default function HomePage() {
           <Card className="text-center">
             <CardHeader>
               <div className="mx-auto w-12 h-12 bg-accent/10 rounded-lg flex items-center justify-center mb-4">
-                <BookOpen className="h-6 w-6 text-accent" />
+                <Cloud className="h-6 w-6 text-accent" />
               </div>
-              <CardTitle>Pembaca Interaktif</CardTitle>
+              <CardTitle>Gemini Storybook</CardTitle>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                Pengalaman membaca dengan animasi halaman, audio narasi, dan fitur bookmark
+                Import cerita langsung dari Gemini Storybook dengan satu klik, hemat waktu pembuatan konten
               </CardDescription>
             </CardContent>
           </Card>
@@ -165,6 +171,15 @@ export default function HomePage() {
                         (e.target as HTMLImageElement).src = "/placeholder.svg"
                       }}
                     />
+                    {/* Gemini Badge */}
+                    {isGeminiStory(story) && (
+                      <div className="absolute top-2 right-2">
+                        <Badge className="bg-blue-500/90 hover:bg-blue-600">
+                          <Cloud className="h-3 w-3 mr-1" />
+                          Gemini
+                        </Badge>
+                      </div>
+                    )}
                   </div>
                   <CardHeader>
                     <CardTitle className="text-lg">{story.title}</CardTitle>

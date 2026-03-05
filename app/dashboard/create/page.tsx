@@ -23,6 +23,7 @@ import {
   Upload,
   X,
   AlertTriangle,
+  Link as LinkIcon,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
@@ -38,11 +39,17 @@ interface EnhancedStoryPage extends StoryPage {
   generatingAudio?: boolean
 }
 
+type UploadMode = "manual" | "gemini"
+
 export default function CreateStoryPage() {
   const router = useRouter()
   const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [uploadMode, setUploadMode] = useState<UploadMode>("manual")
+  const [geminiUrl, setGeminiUrl] = useState("")
+  const [geminiLoading, setGeminiLoading] = useState(false)
+  const [geminiLoaded, setGeminiLoaded] = useState(false)
 
   const [formData, setFormData] = useState({
     title: "",
@@ -51,6 +58,7 @@ export default function CreateStoryPage() {
     indonesian: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
     sundanese: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
     english: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
+    geminiSourceUrl: "",
     isPublished: false,
   })
 
@@ -137,6 +145,49 @@ export default function CreateStoryPage() {
       )
     }))
     setError(null)
+  }
+
+  const loadGeminiStorybook = async () => {
+    if (!geminiUrl.trim()) {
+      setError('Masukkan URL Gemini Storybook')
+      return
+    }
+
+    setGeminiLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/gemini/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geminiUrl })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Gagal memuat Storybook')
+      }
+
+      const data = await response.json()
+
+      setFormData(prev => ({
+        ...prev,
+        title: data.title || "",
+        coverImage: data.coverImage || "",
+        indonesian: data.content?.indonesian || [],
+        sundanese: data.content?.sundanese || [],
+        english: data.content?.english || [],
+        geminiSourceUrl: geminiUrl
+      }))
+
+      setGeminiLoaded(true)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Terjadi kesalahan')
+      setGeminiLoaded(false)
+    } finally {
+      setGeminiLoading(false)
+    }
   }
 
   const addPage = (language: 'indonesian' | 'sundanese' | 'english') => {
@@ -282,7 +333,8 @@ export default function CreateStoryPage() {
       alert(publish ? "Cerita berhasil disimpan dan dipublikasikan!" : "Cerita berhasil disimpan sebagai draft!")
       router.push("/dashboard")
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan'
+      setError(errorMessage)
       setIsLoading(false)
     }
   }
@@ -436,7 +488,7 @@ export default function CreateStoryPage() {
           </Link>
         </Button>
         <h1 className="text-3xl font-bold text-foreground mb-2">Buat Cerita Baru</h1>
-        <p className="text-lg text-muted-foreground">Buat cerita dengan teks, ilustrasi, dan audio untuk setiap halaman</p>
+        <p className="text-lg text-muted-foreground">Buat cerita dengan teks, ilustrasi, dan audio untuk setiap halaman atau import dari Gemini Storybook</p>
       </div>
 
       {error && (
@@ -447,6 +499,66 @@ export default function CreateStoryPage() {
       )}
 
       <div className="space-y-6">
+        {/* Upload Mode Selector */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Mode Upload</CardTitle>
+            <CardDescription>Pilih cara Anda ingin membuat cerita</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div
+                onClick={() => setUploadMode('manual')}
+                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  uploadMode === 'manual' ? 'border-primary bg-primary/5' : 'border-muted'
+                }`}
+              >
+                <h3 className="font-semibold mb-2">Upload Manual</h3>
+                <p className="text-sm text-muted-foreground">Upload gambar sampul, teks, ilustrasi, dan audio secara manual untuk setiap halaman</p>
+              </div>
+
+              <div
+                onClick={() => setUploadMode('gemini')}
+                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  uploadMode === 'gemini' ? 'border-primary bg-primary/5' : 'border-muted'
+                }`}
+              >
+                <h3 className="font-semibold mb-2">Import Gemini Storybook</h3>
+                <p className="text-sm text-muted-foreground">Tempel URL Gemini Storybook dan konten akan otomatis dimuat dengan multi-bahasa</p>
+              </div>
+            </div>
+
+            {uploadMode === 'gemini' && (
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="gemini-url">URL Gemini Storybook</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      id="gemini-url"
+                      placeholder="https://..."
+                      value={geminiUrl}
+                      onChange={(e) => setGeminiUrl(e.target.value)}
+                      disabled={geminiLoading}
+                    />
+                    <Button onClick={loadGeminiStorybook} disabled={geminiLoading} className="gap-2">
+                      {geminiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LinkIcon className="h-4 w-4" />}
+                      Muat Storybook
+                    </Button>
+                  </div>
+                </div>
+
+                {geminiLoaded && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <p className="text-sm font-medium text-green-900">✓ Storybook berhasil dimuat!</p>
+                    <p className="text-sm text-green-800 mt-1">Judul: {formData.title}</p>
+                    <p className="text-sm text-green-800">Lanjut ke bawah untuk mengedit dan menyimpan</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Informasi Dasar</CardTitle>
@@ -509,7 +621,7 @@ export default function CreateStoryPage() {
           <CardHeader>
             <CardTitle>Konten Cerita</CardTitle>
             <CardDescription>
-              Tambahkan teks, ilustrasi, dan narasi audio untuk setiap halaman. Gunakan tombol AI untuk auto-generate konten media
+              Tambahkan teks, ilustrasi, dan narasi audio untuk setiap halaman
             </CardDescription>
           </CardHeader>
           <CardContent>

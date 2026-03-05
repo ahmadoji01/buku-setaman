@@ -33,6 +33,7 @@ const setupDatabase = () => {
           cover_image TEXT,
           author_id TEXT NOT NULL,
           author_name TEXT NOT NULL,
+          gemini_source_url TEXT DEFAULT NULL,
           is_published BOOLEAN NOT NULL DEFAULT FALSE,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -110,6 +111,7 @@ const setupDatabase = () => {
       -- Create indexes
       CREATE INDEX IF NOT EXISTS idx_stories_author_id ON stories(author_id);
       CREATE INDEX IF NOT EXISTS idx_stories_is_published ON stories(is_published);
+      CREATE INDEX IF NOT EXISTS idx_stories_gemini_source_url ON stories(gemini_source_url);
       CREATE INDEX IF NOT EXISTS idx_story_pages_story_id ON story_pages(story_id);
       CREATE INDEX IF NOT EXISTS idx_story_pages_language ON story_pages(language);
       CREATE INDEX IF NOT EXISTS idx_story_illustrations_story_id ON story_illustrations(story_id);

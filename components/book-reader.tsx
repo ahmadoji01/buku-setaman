@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Slider } from "@/components/ui/slider"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,6 +18,8 @@ import {
   Volume2,
   VolumeX,
   RotateCcw,
+  Cloud,
+  AlertTriangle,
 } from "lucide-react"
 import type { Story, Language, BookProgress, StoryPage } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -38,6 +41,8 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
   const [highlightedWord, setHighlightedWord] = useState<number>(-1)
   const [audioProgress, setAudioProgress] = useState(0)
   const [audioDuration, setAudioDuration] = useState(0)
+  const [isGeminiStory] = useState(!!story.gemini_source_url)
+  const [audioError, setAudioError] = useState<string | null>(null)
 
   const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -61,7 +66,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
           pageNumber: pageIndex + 1,
           text: pageContent,
           illustration: story.illustrations?.[pageIndex] || story.illustrations?.[0],
-          // ✅ PERBAIKAN: Tambahkan audio dari audioFiles jika tersedia
           audio: story.audioFiles?.[selectedLanguage] || null,
         })
       }
@@ -78,7 +82,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
           ]
     }
 
-    // Fallback to Indonesian if selected language not available
     const fallbackContent = story.content.indonesian
     if (Array.isArray(fallbackContent)) {
       return fallbackContent
@@ -116,17 +119,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
   const currentPageIllustration = currentPageData?.illustration
   const currentPageAudio = currentPageData?.audio
   const isCoverPage = currentPageData?.isCover === true
-  
-  useEffect(() => {
-    if (currentPageData?.audio) {
-      console.log('[BookReader Audio]', {
-        page: currentPage,
-        language: selectedLanguage,
-        audioUrl: currentPageData.audio,
-        audioFromPageData: !!currentPageData.audio,
-      })
-    }
-  }, [currentPageData, currentPage, selectedLanguage])
 
   // Handle page navigation
   const goToNextPage = () => {
@@ -156,6 +148,7 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
       setIsPlaying(false)
       setAudioProgress(0)
       setAudioDuration(0)
+      setAudioError(null)
     }
   }, [currentPage, selectedLanguage])
 
@@ -167,7 +160,8 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
         setIsPlaying(false)
       } else {
         audioRef.current.play().catch((error) => {
-          // Audio playback failed - this is normal for some browsers when user hasn't interacted with page yet
+          console.error('Audio playback error:', error)
+          setAudioError('Tidak dapat memutar audio')
         })
         setIsPlaying(true)
       }
@@ -197,15 +191,23 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
   const handleAudioLoadedMetadata = () => {
     if (audioRef.current) {
       setAudioDuration(audioRef.current.duration)
+      setAudioError(null)
     }
   }
 
   const handleAudioEnd = () => {
     setIsPlaying(false)
-    // Auto-advance to next page when audio ends
     if (currentPage < totalPages - 1) {
       goToNextPage()
     }
+  }
+
+  const handleAudioError = (e: any) => {
+    console.error('[BookReader Audio Error]', {
+      src: currentPageAudio,
+      error: e.currentTarget?.error?.message,
+    })
+    setAudioError('Audio tidak dapat dimuat')
   }
 
   const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -223,7 +225,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
     return `${mins}:${secs.toString().padStart(2, "0")}`
   }
 
-  // Handle bookmarks
   const toggleBookmark = () => {
     if (bookmarks.includes(currentPage)) {
       setBookmarks(bookmarks.filter((page) => page !== currentPage))
@@ -269,7 +270,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
     }
   }, [currentPage, totalPages, bookmarks, story.id, onProgressUpdate])
 
-  // Language options
   const availableLanguages = Object.keys(story.content) as Language[]
   const languageLabels = {
     indonesian: "Bahasa Indonesia",
@@ -279,7 +279,17 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-6">
-      {/* ✅ PERBAIKAN: Audio element dengan better error handling dan logging */}
+      {/* Gemini Badge */}
+      {isGeminiStory && (
+        <Alert className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+          <Cloud className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <AlertDescription className="text-blue-900 dark:text-blue-100">
+            📚 Cerita ini diimport dari Gemini Storybook
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Audio Element */}
       {currentPageAudio && (
         <audio
           key={`audio-${currentPageAudio}`}
@@ -289,13 +299,7 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
           onEnded={handleAudioEnd}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
-          onError={(e) => {
-            console.error('[BookReader Audio Error]', {
-              src: currentPageAudio,
-              errorCode: e.currentTarget.error?.code,
-              errorMessage: e.currentTarget.error?.message,
-            })
-          }}
+          onError={handleAudioError}
           crossOrigin="anonymous"
         >
           <source src={currentPageAudio} type="audio/mpeg" />
@@ -320,16 +324,16 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
             </SelectContent>
           </Select>
 
-          {/* Audio Controls - Only show if current page has audio */}
+          {/* Audio Controls */}
           {currentPageAudio ? (
             <div className="flex items-center space-x-2">
-              <Button variant="outline" size="sm" onClick={toggleAudio}>
+              <Button variant="outline" size="sm" onClick={toggleAudio} title={isPlaying ? "Pause" : "Play"}>
                 {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </Button>
-              <Button variant="outline" size="sm" onClick={toggleMute}>
+              <Button variant="outline" size="sm" onClick={toggleMute} title={isMuted ? "Unmute" : "Mute"}>
                 {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleResetAudio}>
+              <Button variant="outline" size="sm" onClick={handleResetAudio} title="Reset">
                 <RotateCcw className="h-4 w-4" />
               </Button>
             </div>
@@ -390,8 +394,16 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
         </div>
       </div>
 
+      {/* Audio Error */}
+      {audioError && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{audioError}</AlertDescription>
+        </Alert>
+      )}
+
       {/* Per-Page Audio Player */}
-      {currentPageAudio && (
+      {currentPageAudio && !audioError && (
         <Card className="bg-slate-50 dark:bg-slate-900 border">
           <CardContent className="p-4">
             <div className="space-y-3">
@@ -421,7 +433,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
       {/* Book Reader */}
       <Card className="min-h-[500px] relative overflow-hidden">
         <CardContent className="p-8">
-          {/* Book Pages */}
           <div className="relative">
             <div
               className={cn(
@@ -429,7 +440,6 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
                 isPageTurning && "transform scale-95 opacity-50",
               )}
             >
-              {/* Cover Page */}
               {isCoverPage ? (
                 <div className="text-center space-y-6">
                   <h1 className="text-4xl font-bold text-foreground">{story.title}</h1>
@@ -438,26 +448,36 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
                       src={currentPageIllustration}
                       alt={`Cover: ${story.title}`}
                       className="w-64 h-80 object-cover mx-auto rounded-lg shadow-lg"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "/placeholder.svg"
+                      }}
                     />
                   </div>
                   <div className="text-muted-foreground">
                     <p className="text-sm">Penulis: {story.authorName}</p>
+                    {isGeminiStory && (
+                      <p className="text-sm text-blue-600 dark:text-blue-400 flex items-center justify-center gap-2 mt-2">
+                        <Cloud className="h-4 w-4" />
+                        Dari Gemini Storybook
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
                 <>
-                  {/* Story Illustration */}
                   {currentPageIllustration && (
                     <div className="mb-6 text-center">
                       <img
-                        src={currentPageIllustration || "/placeholder.svg"}
+                        src={currentPageIllustration}
                         alt={`Ilustrasi halaman ${currentPageData?.pageNumber || currentPage}`}
                         className="max-w-full h-64 object-contain mx-auto rounded-lg"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = "/placeholder.svg"
+                        }}
                       />
                     </div>
                   )}
 
-                  {/* Story Text */}
                   <div
                     className={cn(
                       "text-center leading-relaxed",
