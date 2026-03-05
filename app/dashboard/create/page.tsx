@@ -24,10 +24,12 @@ import {
   X,
   AlertTriangle,
   Link as LinkIcon,
+  Cloud,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
 import type { StoryPage } from "@/lib/types"
+import { GeminiUploadForm } from "@/components/gemini-upload-form"
 
 interface EnhancedStoryPage extends StoryPage {
   audioFile?: File | string
@@ -58,7 +60,9 @@ export default function CreateStoryPage() {
     indonesian: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
     sundanese: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
     english: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
-    geminiSourceUrl: "",
+    geminiUrl: "",
+    geminiCoverImage: "",
+    geminiCoverImageFile: null as File | null,
     isPublished: false,
   })
 
@@ -254,84 +258,129 @@ export default function CreateStoryPage() {
       return
     }
 
-    if (!formData.indonesian.some((page) => page.text.trim())) {
-      setError("Minimal satu halaman cerita dalam Bahasa Indonesia wajib diisi")
-      return
+    // Validasi berdasarkan upload mode
+    if (uploadMode === 'gemini') {
+      // Gemini story validation
+      if (!formData.geminiUrl.trim()) {
+        setError("Link Gemini Storybook wajib diisi")
+        return
+      }
+
+      if (!formData.geminiCoverImageFile) {
+        setError("Sampul buku wajib diisi")
+        return
+      }
+
+      if (!formData.geminiUrl.includes('gemini.google.com/share')) {
+        setError("Link harus dari Gemini Storybook (gemini.google.com/share/...)")
+        return
+      }
+    } else {
+      // Manual story validation
+      if (!formData.indonesian.some((page) => page.text.trim())) {
+        setError("Minimal satu halaman cerita dalam Bahasa Indonesia wajib diisi")
+        return
+      }
     }
 
     setIsLoading(true)
 
     try {
-      const formDataToSend = new FormData()
+      if (uploadMode === 'gemini') {
+        // Create Gemini story
+        const geminiFormData = new FormData()
+        geminiFormData.append('title', formData.title)
+        geminiFormData.append('geminiUrl', formData.geminiUrl)
+        geminiFormData.append('coverImage', formData.geminiCoverImageFile!)
+        geminiFormData.append('authorId', user?.id || '')
+        geminiFormData.append('authorName', user?.name || '')
+        geminiFormData.append('isPublished', publish ? 'true' : 'false')
 
-      formDataToSend.append('title', formData.title)
-      formDataToSend.append('authorId', user?.id || '')
-      formDataToSend.append('authorName', user?.name || '')
-      formDataToSend.append('isPublished', publish ? 'true' : 'false')
-
-      if (formData.coverImageFile) {
-        formDataToSend.append('coverImage', formData.coverImageFile)
-      }
-
-      const content: Record<string, any> = {}
-
-      if (formData.indonesian.some((page) => page.text.trim())) {
-        content.indonesian = formData.indonesian
-          .filter((page) => page.text.trim())
-          .map((page, index) => ({
-            pageNumber: index + 1,
-            text: page.text,
-          }))
-      }
-
-      if (formData.sundanese.some((page) => page.text.trim())) {
-        content.sundanese = formData.sundanese
-          .filter((page) => page.text.trim())
-          .map((page, index) => ({
-            pageNumber: index + 1,
-            text: page.text,
-          }))
-      }
-
-      if (formData.english.some((page) => page.text.trim())) {
-        content.english = formData.english
-          .filter((page) => page.text.trim())
-          .map((page, index) => ({
-            pageNumber: index + 1,
-            text: page.text,
-          }))
-      }
-
-      formDataToSend.append('content', JSON.stringify(content))
-
-      const langs = ['indonesian', 'sundanese', 'english'] as const
-
-      langs.forEach(lang => {
-        formData[lang].forEach((page, pageIndex) => {
-          if (page.text.trim()) {
-            if (page.illustrationFile && page.illustrationFile instanceof File) {
-              formDataToSend.append(`illustration_${lang}_${pageIndex}`, page.illustrationFile)
-            }
-            if (page.audioFile && page.audioFile instanceof File) {
-              formDataToSend.append(`audio_${lang}_${pageIndex}`, page.audioFile)
-            }
-          }
+        const response = await fetch('/api/stories/gemini', {
+          method: 'POST',
+          body: geminiFormData
         })
-      })
 
-      const response = await fetch('/api/stories', {
-        method: 'POST',
-        body: formDataToSend,
-      })
+        const data = await response.json()
 
-      const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Gagal membuat cerita Gemini')
+        }
 
-      if (!response.ok) {
-        throw new Error(data.error || data.details || 'Failed to save story')
+        alert(publish ? "Cerita Gemini berhasil disimpan dan dipublikasikan!" : "Cerita Gemini berhasil disimpan sebagai draft!")
+        router.push("/dashboard")
+      } else {
+        const formDataToSend = new FormData()
+
+        formDataToSend.append('title', formData.title)
+        formDataToSend.append('authorId', user?.id || '')
+        formDataToSend.append('authorName', user?.name || '')
+        formDataToSend.append('isPublished', publish ? 'true' : 'false')
+
+        if (formData.coverImageFile) {
+          formDataToSend.append('coverImage', formData.coverImageFile)
+        }
+
+        const content: Record<string, any> = {}
+
+        if (formData.indonesian.some((page) => page.text.trim())) {
+          content.indonesian = formData.indonesian
+            .filter((page) => page.text.trim())
+            .map((page, index) => ({
+              pageNumber: index + 1,
+              text: page.text,
+            }))
+        }
+
+        if (formData.sundanese.some((page) => page.text.trim())) {
+          content.sundanese = formData.sundanese
+            .filter((page) => page.text.trim())
+            .map((page, index) => ({
+              pageNumber: index + 1,
+              text: page.text,
+            }))
+        }
+
+        if (formData.english.some((page) => page.text.trim())) {
+          content.english = formData.english
+            .filter((page) => page.text.trim())
+            .map((page, index) => ({
+              pageNumber: index + 1,
+              text: page.text,
+            }))
+        }
+
+        formDataToSend.append('content', JSON.stringify(content))
+
+        const langs = ['indonesian', 'sundanese', 'english'] as const
+
+        langs.forEach(lang => {
+          formData[lang].forEach((page, pageIndex) => {
+            if (page.text.trim()) {
+              if (page.illustrationFile && page.illustrationFile instanceof File) {
+                formDataToSend.append(`illustration_${lang}_${pageIndex}`, page.illustrationFile)
+              }
+              if (page.audioFile && page.audioFile instanceof File) {
+                formDataToSend.append(`audio_${lang}_${pageIndex}`, page.audioFile)
+              }
+            }
+          })
+        })
+
+        const response = await fetch('/api/stories', {
+          method: 'POST',
+          body: formDataToSend,
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || data.details || 'Failed to save story')
+        }
+
+        alert(publish ? "Cerita berhasil disimpan dan dipublikasikan!" : "Cerita berhasil disimpan sebagai draft!")
+        router.push("/dashboard")
       }
-
-      alert(publish ? "Cerita berhasil disimpan dan dipublikasikan!" : "Cerita berhasil disimpan sebagai draft!")
-      router.push("/dashboard")
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan'
       setError(errorMessage)
@@ -499,14 +548,14 @@ export default function CreateStoryPage() {
       )}
 
       <div className="space-y-6">
-        {/* Upload Mode Selector */}
         <Card>
           <CardHeader>
-            <CardTitle>Mode Upload</CardTitle>
-            <CardDescription>Pilih cara Anda ingin membuat cerita</CardDescription>
+            <CardTitle>Pilih Cara Upload Cerita</CardTitle>
+            <CardDescription>Pilih antara upload manual atau import dari Gemini Storybook</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Manual Mode */}
               <div
                 onClick={() => setUploadMode('manual')}
                 className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
@@ -514,143 +563,151 @@ export default function CreateStoryPage() {
                 }`}
               >
                 <h3 className="font-semibold mb-2">Upload Manual</h3>
-                <p className="text-sm text-muted-foreground">Upload gambar sampul, teks, ilustrasi, dan audio secara manual untuk setiap halaman</p>
+                <p className="text-sm text-muted-foreground">
+                  Upload gambar sampul, teks, ilustrasi, dan audio secara manual untuk setiap halaman cerita.
+                </p>
               </div>
 
+              {/* Gemini Mode */}
               <div
                 onClick={() => setUploadMode('gemini')}
                 className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
                   uploadMode === 'gemini' ? 'border-primary bg-primary/5' : 'border-muted'
                 }`}
               >
-                <h3 className="font-semibold mb-2">Import Gemini Storybook</h3>
-                <p className="text-sm text-muted-foreground">Tempel URL Gemini Storybook dan konten akan otomatis dimuat dengan multi-bahasa</p>
+                <h3 className="font-semibold mb-2 flex items-center gap-2">
+                  <Cloud className="h-5 w-5 text-blue-500" />
+                  Import Gemini Storybook
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Cukup isi judul, sampul, dan link Gemini. Cerita akan ditampilkan langsung dari Gemini.
+                </p>
               </div>
             </div>
-
-            {uploadMode === 'gemini' && (
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="gemini-url">URL Gemini Storybook</Label>
-                  <div className="flex gap-2 mt-2">
-                    <Input
-                      id="gemini-url"
-                      placeholder="https://..."
-                      value={geminiUrl}
-                      onChange={(e) => setGeminiUrl(e.target.value)}
-                      disabled={geminiLoading}
-                    />
-                    <Button onClick={loadGeminiStorybook} disabled={geminiLoading} className="gap-2">
-                      {geminiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LinkIcon className="h-4 w-4" />}
-                      Muat Storybook
-                    </Button>
-                  </div>
-                </div>
-
-                {geminiLoaded && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <p className="text-sm font-medium text-green-900">✓ Storybook berhasil dimuat!</p>
-                    <p className="text-sm text-green-800 mt-1">Judul: {formData.title}</p>
-                    <p className="text-sm text-green-800">Lanjut ke bawah untuk mengedit dan menyimpan</p>
-                  </div>
-                )}
-              </div>
-            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Informasi Dasar</CardTitle>
-            <CardDescription>Masukkan judul dan sampul cerita</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="title">Judul Cerita *</Label>
-              <Input
-                id="title"
-                placeholder="Masukkan judul cerita..."
-                value={formData.title}
-                onChange={(e) => handleInputChange("title", e.target.value)}
+        {uploadMode === 'gemini' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Informasi Gemini Storybook</CardTitle>
+              <CardDescription>Isi data dasar cerita Gemini Storybook</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <GeminiUploadForm
+                title={formData.title}
+                coverImage={formData.geminiCoverImage}
+                geminiUrl={formData.geminiUrl}
+                onTitleChange={(title) => setFormData(prev => ({ ...prev, title }))}
+                onCoverImageChange={(file, preview) => 
+                  setFormData(prev => ({
+                    ...prev,
+                    geminiCoverImage: preview,
+                    geminiCoverImageFile: file
+                  }))
+                }
+                onGeminiUrlChange={(url) => setFormData(prev => ({ ...prev, geminiUrl: url }))}
               />
-            </div>
+            </CardContent>
+          </Card>
+        )}
 
-            <div>
-              <Label htmlFor="coverImage">Sampul Buku (Opsional)</Label>
-              <div className="mt-1 flex items-center gap-4">
-                {formData.coverImage ? (
-                  <div className="relative inline-block">
-                    <img
-                      src={formData.coverImage}
-                      alt="Cover preview"
-                      className="h-32 w-24 object-cover rounded border"
-                    />
-                    <button
-                      onClick={() => setFormData(prev => ({ ...prev, coverImage: '', coverImageFile: null }))}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ) : (
-                  <label className="flex items-center justify-center w-24 h-32 border-2 border-dashed rounded cursor-pointer hover:bg-muted transition-colors">
-                    <div className="text-center">
-                      <Upload className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Upload</span>
-                    </div>
-                    <input
-                      id="cover-upload"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleCoverImageUpload}
-                    />
-                  </label>
-                )}
-                <div className="text-sm text-muted-foreground">
-                  <p>Format: JPG, PNG</p>
-                  <p>Maksimal 5MB</p>
-                  <p>Rasio 2:3 disarankan</p>
+        {uploadMode === 'manual' && (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle>Informasi Dasar</CardTitle>
+                <CardDescription>Masukkan judul dan sampul cerita</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="title">Judul Cerita *</Label>
+                  <Input
+                    id="title"
+                    placeholder="Masukkan judul cerita..."
+                    value={formData.title}
+                    onChange={(e) => handleInputChange("title", e.target.value)}
+                  />
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Konten Cerita</CardTitle>
-            <CardDescription>
-              Tambahkan teks, ilustrasi, dan narasi audio untuk setiap halaman
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="indonesian" className="space-y-4">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="indonesian">Bahasa Indonesia *</TabsTrigger>
-                <TabsTrigger value="sundanese">Basa Sunda</TabsTrigger>
-                <TabsTrigger value="english">English</TabsTrigger>
-              </TabsList>
+                <div>
+                  <Label htmlFor="coverImage">Sampul Buku (Opsional)</Label>
+                  <div className="mt-1 flex items-center gap-4">
+                    {formData.coverImage ? (
+                      <div className="relative inline-block">
+                        <img
+                          src={formData.coverImage}
+                          alt="Cover preview"
+                          className="h-32 w-24 object-cover rounded border"
+                        />
+                        <button
+                          onClick={() => setFormData(prev => ({ ...prev, coverImage: '', coverImageFile: null }))}
+                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center justify-center w-24 h-32 border-2 border-dashed rounded cursor-pointer hover:bg-muted transition-colors">
+                        <div className="text-center">
+                          <Upload className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">Upload</span>
+                        </div>
+                        <input
+                          id="cover-upload"
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleCoverImageUpload}
+                        />
+                      </label>
+                    )}
+                    <div className="text-sm text-muted-foreground">
+                      <p>Format: JPG, PNG</p>
+                      <p>Maksimal 5MB</p>
+                      <p>Rasio 2:3 disarankan</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-              <TabsContent value="indonesian">
-                {renderPageSection('indonesian', 'dalam Bahasa Indonesia', true)}
-              </TabsContent>
+            <Card>
+              <CardHeader>
+                <CardTitle>Konten Cerita</CardTitle>
+                <CardDescription>
+                  Tambahkan teks, ilustrasi, dan narasi audio untuk setiap halaman
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="indonesian" className="space-y-4">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="indonesian">Bahasa Indonesia *</TabsTrigger>
+                    <TabsTrigger value="sundanese">Basa Sunda</TabsTrigger>
+                    <TabsTrigger value="english">English</TabsTrigger>
+                  </TabsList>
 
-              <TabsContent value="sundanese">
-                {renderPageSection('sundanese', 'dalam Basa Sunda', false)}
-              </TabsContent>
+                  <TabsContent value="indonesian">
+                    {renderPageSection('indonesian', 'dalam Bahasa Indonesia', true)}
+                  </TabsContent>
 
-              <TabsContent value="english">
-                {renderPageSection('english', 'in English', false)}
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+                  <TabsContent value="sundanese">
+                    {renderPageSection('sundanese', 'dalam Basa Sunda', false)}
+                  </TabsContent>
+
+                  <TabsContent value="english">
+                    {renderPageSection('english', 'in English', false)}
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </>
+        )}
 
         <div className="flex flex-col sm:flex-row gap-4">
           <Button 
             onClick={() => handleSave(false)} 
-            disabled={isLoading} 
+            disabled={isLoading || !formData.title.trim() || (uploadMode === 'gemini' && (!formData.geminiUrl || !formData.geminiCoverImageFile))} 
             variant="outline" 
             className="flex-1"
           >
@@ -668,7 +725,7 @@ export default function CreateStoryPage() {
           </Button>
           <Button 
             onClick={() => handleSave(true)} 
-            disabled={isLoading} 
+            disabled={isLoading || !formData.title.trim() || (uploadMode === 'gemini' && (!formData.geminiUrl || !formData.geminiCoverImageFile))} 
             className="flex-1"
           >
             {isLoading ? (

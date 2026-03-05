@@ -1,4 +1,4 @@
-// app/api/stories/[id]/route.ts
+// app/api/stories/[id]/route.ts - UPDATED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getDatabaseService } from '@/lib/db-service';
@@ -20,7 +20,10 @@ export async function GET(
         author_name TEXT NOT NULL,
         is_published INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        gemini_source_url TEXT,
+        gemini_embed_url TEXT,
+        gemini_id TEXT
       );
 
       CREATE TABLE IF NOT EXISTS story_pages (
@@ -101,17 +104,15 @@ export async function GET(
         content[page.language] = [];
       }
       
-      // ✅ PERBAIKAN: Include audio URL dari page_audio_url
       const pageObject: any = {
         pageNumber: page.page_number,
         text: page.text,
         illustration: page.illustration,
-        audio: page.page_audio_url || null, // ✅ Audio URL dari per-page structure
+        audio: page.page_audio_url || null,
       };
       
       content[page.language].push(pageObject);
       
-      // Store first page's audio as fallback for legacy audioFiles object
       if (page.page_audio_url && !audioFilesByLanguage[page.language]) {
         audioFilesByLanguage[page.language] = page.page_audio_url;
       }
@@ -143,6 +144,7 @@ export async function GET(
       }
     });
 
+    // ✅ FIXED: Include Gemini fields in response
     const structuredStory = {
       id: story.id,
       title: story.title,
@@ -154,7 +156,11 @@ export async function GET(
       audioFiles,
       isPublished: Boolean(story.is_published),
       createdAt: new Date(story.created_at),
-      updatedAt: new Date(story.updated_at)
+      updatedAt: new Date(story.updated_at),
+      // ✅ Gemini fields untuk detect Gemini stories
+      geminiSourceUrl: story.gemini_source_url || null,
+      geminiEmbedUrl: story.gemini_embed_url || null,
+      geminiId: story.gemini_id || null
     };
 
     return NextResponse.json({ story: structuredStory });
@@ -270,7 +276,6 @@ export async function PUT(
       revalidatePath(`/api/stories/${storyId}`);
     } catch (error) {
       console.error('Cache revalidation error:', error);
-      // Don't fail the request if cache revalidation fails
     }
 
     return NextResponse.json({
@@ -314,7 +319,6 @@ export async function DELETE(
       revalidatePath(`/api/stories/${storyId}`);
     } catch (error) {
       console.error('Cache revalidation error:', error);
-      // Don't fail the request if cache revalidation fails
     }
 
     return NextResponse.json({
