@@ -22,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, BookOpen, Eye, Edit, Trash2, MoreHorizontal, Upload, BarChart3, Cloud } from "lucide-react"
+import { Plus, BookOpen, Eye, Edit, Trash2, MoreVertical, Upload, BarChart3, Cloud } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
 import type { Story } from "@/lib/types"
@@ -88,7 +88,6 @@ export default function DashboardPage() {
   const publishedStories = stories.filter((story) => story.isPublished)
   const draftStories = stories.filter((story) => !story.isPublished)
   const geminiStories = stories.filter((story) => story.gemini_source_url)
-  const manualStories = stories.filter((story) => !story.gemini_source_url)
 
   const handleDeleteClick = (storyId: string) => {
     setStoryToDelete(storyId)
@@ -121,21 +120,31 @@ export default function DashboardPage() {
     if (!story) return
 
     try {
+      // ✅ FIXED: Send data correctly
       const response = await fetch(`/api/stories/${storyId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          ...story,
-          isPublished: !story.isPublished
+          title: story.title,
+          content: story.content,
+          isPublished: !story.isPublished,
+          illustrations: story.illustrations || [],
+          audioFiles: story.audioFiles || {}
         })
       })
+
+      const responseData = await response.json()
 
       if (response.ok) {
         setStories(stories.map((s) => 
           s.id === storyId ? { ...s, isPublished: !s.isPublished } : s
         ))
+        alert(story.isPublished ? 'Cerita dijadikan draft' : 'Cerita dipublikasikan')
       } else {
-        alert('Gagal mengubah status cerita')
+        alert(responseData.error || 'Gagal mengubah status cerita')
+        console.error('Error response:', responseData)
       }
     } catch (error) {
       console.error('Error toggling publish:', error)
@@ -392,28 +401,40 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview, isGemi
               <div className="flex-shrink-0">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Buka menu</span>
-                    </Button>
+                    <button
+                      className="flex items-center space-x-2 px-3 py-2 rounded-md hover:bg-accent transition-colors"
+                      type="button"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                      <span className="sr-only">Menu cerita</span>
+                    </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
+
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-56 z-[9999]"
+                    sideOffset={8}
+                    avoidCollisions={true}
+                  >
+                    {/* View Story */}
                     <DropdownMenuItem asChild>
-                      <Link href={`/stories/${story.id}`} className="cursor-pointer">
+                      <Link href={`/stories/${story.id}`} className="flex items-center cursor-pointer">
                         <Eye className="mr-2 h-4 w-4" />
-                        <span>Lihat</span>
+                        <span>Lihat Cerita</span>
                       </Link>
                     </DropdownMenuItem>
 
+                    {/* Edit Story */}
                     <DropdownMenuItem asChild>
-                      <Link href={`/dashboard/edit/${story.id}`} className="cursor-pointer">
+                      <Link href={`/dashboard/edit/${story.id}`} className="flex items-center cursor-pointer">
                         <Edit className="mr-2 h-4 w-4" />
-                        <span>Edit</span>
+                        <span>Edit Cerita</span>
                       </Link>
                     </DropdownMenuItem>
 
                     <DropdownMenuSeparator />
 
+                    {/* Publish/Draft Toggle */}
                     <DropdownMenuItem
                       onClick={() => onTogglePublish(story.id)}
                       className="cursor-pointer"
@@ -433,12 +454,13 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview, isGemi
 
                     <DropdownMenuSeparator />
 
+                    {/* Delete */}
                     <DropdownMenuItem
                       onClick={() => onDelete(story.id)}
-                      className="cursor-pointer text-destructive focus:text-destructive"
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      <span>Hapus</span>
+                      <span>Hapus Cerita</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
