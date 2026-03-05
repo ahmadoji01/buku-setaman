@@ -261,60 +261,46 @@ export default function EditStoryPage({
     setIsSaving(true)
 
     try {
-      const formDataToSend = new FormData()
-
-      formDataToSend.append("title", formData.title)
-      formDataToSend.append("isPublished", publish ? "true" : "false")
-
-      if (formData.coverImageFile) {
-        formDataToSend.append("coverImage", formData.coverImageFile)
-      }
-
-      // Build content structure
+      // ✅ FIXED: Build content in proper JSON structure with ALL languages
       const content: Record<string, any> = {}
       const languages = ["indonesian", "sundanese", "english"] as const
 
       for (const lang of languages) {
         const langText = storyText[lang]
-        if (langText.some((text) => text.trim())) {
+        // Include language even if it has empty strings, to preserve structure
+        if (langText && langText.length > 0) {
           content[lang] = langText
             .map((text, index) => ({
               pageNumber: index + 1,
-              text: text,
+              text: text || "", // Keep even if empty
             }))
-            .filter((page) => page.text.trim())
         }
       }
 
-      if (Object.keys(content).length === 0) {
-        setError("Minimal ada satu halaman dengan teks")
+      // ✅ Make sure Indonesian has content (required)
+      if (!content.indonesian || content.indonesian.length === 0) {
+        setError("Minimal ada satu halaman dengan teks dalam Bahasa Indonesia")
         setIsSaving(false)
         return
       }
 
-      formDataToSend.append("content", JSON.stringify(content))
+      console.log("📝 Content being sent:", content)
 
-      // Add shared illustrations
-      pages.forEach((page, pageIndex) => {
-        if (page.illustrationFile && page.illustrationFile instanceof File) {
-          formDataToSend.append(`illustration_${pageIndex}`, page.illustrationFile)
-        }
-      })
-
-      // Add per-language audio
-      pages.forEach((page, pageIndex) => {
-        if (page.audioFiles) {
-          for (const [lang, audioFile] of Object.entries(page.audioFiles)) {
-            if (audioFile && audioFile instanceof File) {
-              formDataToSend.append(`audio_${lang}_${pageIndex}`, audioFile)
-            }
-          }
-        }
-      })
-
+      // ✅ FIXED: Send as JSON with proper structure
       const response = await fetch(`/api/stories/${params.id}`, {
         method: "PUT",
-        body: formDataToSend,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: formData.title.trim(),
+          content: content,
+          isPublished: publish,
+          illustrations: pages
+            .map((p) => p.illustration)
+            .filter((ill) => ill && typeof ill === "string"),
+          audioFiles: {},
+        }),
       })
 
       const data = await response.json()
@@ -328,6 +314,7 @@ export default function EditStoryPage({
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Terjadi kesalahan"
       setError(errorMessage)
+      console.error("Save error:", error)
       setIsSaving(false)
     }
   }

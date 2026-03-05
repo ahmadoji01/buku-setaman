@@ -180,43 +180,57 @@ export async function PUT(
   try {
     const storyId = params.id;
     
-    // Get content type
     const contentType = request.headers.get('content-type') || '';
-    
     let body: any = {};
     
-    // Handle both JSON and FormData
+    // Handle JSON request
     if (contentType.includes('application/json')) {
-      body = await request.json();
-    } else if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData();
-      // Convert FormData to object
-      body = {
-        title: formData.get('title'),
-        content: formData.get('content'),
-        isPublished: formData.get('isPublished') === 'true',
-        illustrations: formData.getAll('illustrations'),
-        audioFiles: {},
-      };
-      // Handle audio files
-      const audioEntries = Array.from(formData.entries()).filter(([key]) => key.startsWith('audio_'));
-      audioEntries.forEach(([key, value]) => {
-        body.audioFiles[key] = value;
-      });
+      try {
+        body = await request.json();
+      } catch (parseError) {
+        console.error('❌ JSON parse error:', parseError);
+        return NextResponse.json(
+          { error: 'Invalid JSON format' },
+          { status: 400 }
+        );
+      }
     } else {
-      // Try to parse as JSON as fallback
+      // Fallback for other content types
       const text = await request.text();
       if (text.trim()) {
-        body = JSON.parse(text);
+        try {
+          body = JSON.parse(text);
+        } catch (parseError) {
+          console.error('❌ Fallback parse error:', parseError);
+          return NextResponse.json(
+            { error: 'Invalid request body' },
+            { status: 400 }
+          );
+        }
       }
     }
 
     const { title, content, isPublished, illustrations, audioFiles } = body;
 
+    console.log('📥 PUT request received:', {
+      storyId,
+      title,
+      contentKeys: Object.keys(content || {}),
+      isPublished,
+      illustrationsCount: illustrations?.length || 0
+    });
+
     // Validation
     if (!title || !title.trim()) {
       return NextResponse.json(
         { error: 'Title is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!content || typeof content !== 'object') {
+      return NextResponse.json(
+        { error: 'Content must be a valid object' },
         { status: 400 }
       );
     }
@@ -236,13 +250,17 @@ export async function PUT(
       storyId
     ]);
 
-    // Delete existing pages, page audio, illustrations, and audio files
+    // ✅ CRITICAL: Delete only story_pages (not illustrations)
+    // This preserves existing illustrations while updating pages
     dbService.run('DELETE FROM story_pages WHERE story_id = ?', [storyId]);
     dbService.run('DELETE FROM story_page_audio WHERE story_id = ?', [storyId]);
-    dbService.run('DELETE FROM story_illustrations WHERE story_id = ?', [storyId]);
-    dbService.run('DELETE FROM story_audio_files WHERE story_id = ?', [storyId]);
 
-    // Insert new pages with per-page audio
+    // ✅ IMPORTANT: Only delete illustrations if new ones provided
+    if (illustrations && Array.isArray(illustrations) && illustrations.length > 0) {
+      dbService.run('DELETE FROM story_illustrations WHERE story_id = ?', [storyId]);
+    }
+
+    // Insert new pages with all languages
     if (content && typeof content === 'object') {
       const insertPageQuery = `
         INSERT INTO story_pages (story_id, language, page_number, text, illustration)
@@ -254,38 +272,56 @@ export async function PUT(
         VALUES (?, ?, ?, ?)
       `;
 
+      // Process each language in content
       Object.entries(content).forEach(([language, pages]: [string, any]) => {
-        if (Array.isArray(pages)) {
-          pages.forEach((page: any, index: number) => {
-            const pageNumber = page.pageNumber || index + 1;
-            
+        if (!Array.isArray(pages)) {
+          console.warn(`⚠️ Skipping ${language}: not an array`);
+          return;
+        }
+
+        console.log(`📖 Processing ${language}: ${pages.length} pages`);
+
+        pages.forEach((page: any, index: number) => {
+          const pageNumber = page.pageNumber || index + 1;
+          const pageText = page.text || '';
+          const pageIllustration = page.illustration || '';
+
+          // Insert page
+          try {
             dbService.run(insertPageQuery, [
               storyId,
               language,
               pageNumber,
-              page.text || '',
-              page.illustration || ''
+              pageText,
+              pageIllustration
             ]);
+            console.log(`  ✓ ${language} page ${pageNumber} saved`);
+          } catch (error) {
+            console.error(`  ❌ Error saving ${language} page ${pageNumber}:`, error);
+          }
 
-            // Insert page-specific audio if available
-            if (page.audio) {
-              const audioUrl = typeof page.audio === 'string' ? page.audio : '';
-              if (audioUrl) {
+          // Insert page-specific audio if available
+          if (page.audio) {
+            const audioUrl = typeof page.audio === 'string' ? page.audio : '';
+            if (audioUrl) {
+              try {
                 dbService.run(insertPageAudioQuery, [
                   storyId,
                   pageNumber,
                   language,
                   audioUrl
                 ]);
+              } catch (error) {
+                console.error(`  ❌ Error saving ${language} page ${pageNumber} audio:`, error);
               }
             }
-          });
-        }
+          }
+        });
       });
     }
 
-    // Insert illustrations if provided
-    if (illustrations && Array.isArray(illustrations)) {
+    // Insert new illustrations only if provided
+    if (illustrations && Array.isArray(illustrations) && illustrations.length > 0) {
       const insertIllustrationQuery = `
         INSERT INTO story_illustrations (story_id, illustration_url, order_index)
         VALUES (?, ?, ?)
@@ -298,8 +334,8 @@ export async function PUT(
       });
     }
 
-    // Insert audio files (legacy full-story audio) if provided
-    if (audioFiles && typeof audioFiles === 'object') {
+    // Insert audio files (legacy full-story audio) only if provided
+    if (audioFiles && typeof audioFiles === 'object' && Object.keys(audioFiles).length > 0) {
       const insertAudioQuery = `
         INSERT INTO story_audio_files (story_id, language, audio_url)
         VALUES (?, ?, ?)
@@ -323,12 +359,14 @@ export async function PUT(
       console.error('Cache revalidation error:', error);
     }
 
+    console.log(`✅ Story ${storyId} updated successfully`);
+
     return NextResponse.json({
       success: true,
       message: 'Story updated successfully'
     });
   } catch (error) {
-    console.error('Error updating story:', error);
+    console.error('❌ Error updating story:', error);
     return NextResponse.json(
       { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
