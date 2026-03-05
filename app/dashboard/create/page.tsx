@@ -32,11 +32,16 @@ import type { StoryPage } from "@/lib/types"
 import { GeminiUploadForm } from "@/components/gemini-upload-form"
 
 interface EnhancedStoryPage extends StoryPage {
-  audioFile?: File | string
-  illustrationFile?: File | string
   pageNumber: number
-  illustration: string
   text: string
+  illustration: string
+  illustrationFile?: File | string
+  // Per-language audio
+  audioFiles?: {
+    indonesian?: File | string
+    sundanese?: File | string
+    english?: File | string
+  }
   generatingIllustration?: boolean
   generatingAudio?: boolean
 }
@@ -53,13 +58,34 @@ export default function CreateStoryPage() {
   const [geminiLoading, setGeminiLoading] = useState(false)
   const [geminiLoaded, setGeminiLoaded] = useState(false)
 
+  // Shared pages array for all languages
+  const [pages, setPages] = useState<EnhancedStoryPage[]>([
+    {
+      pageNumber: 1,
+      text: "",
+      illustration: "",
+      illustrationFile: undefined,
+      audioFiles: {
+        indonesian: undefined,
+        sundanese: undefined,
+        english: undefined,
+      },
+      generatingIllustration: false,
+      generatingAudio: false,
+    }
+  ])
+
+  // Language-specific text for each page
+  const [storyText, setStoryText] = useState({
+    indonesian: [""],
+    sundanese: [""],
+    english: [""],
+  })
+
   const [formData, setFormData] = useState({
     title: "",
     coverImage: "",
     coverImageFile: null as File | null,
-    indonesian: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
-    sundanese: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
-    english: [{ pageNumber: 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }] as EnhancedStoryPage[],
     geminiUrl: "",
     geminiCoverImage: "",
     geminiCoverImageFile: null as File | null,
@@ -103,7 +129,7 @@ export default function CreateStoryPage() {
     reader.readAsDataURL(file)
   }
 
-  const handlePageIllustrationUpload = (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number, file: File) => {
+  const handlePageIllustrationUpload = (pageIndex: number, file: File) => {
     if (!file.type.startsWith('image/')) {
       setError('File harus berupa gambar')
       return
@@ -116,20 +142,17 @@ export default function CreateStoryPage() {
 
     const reader = new FileReader()
     reader.onloadend = () => {
-      setFormData(prev => ({
-        ...prev,
-        [language]: prev[language].map((page, index) =>
-          index === pageIndex
-            ? { ...page, illustration: reader.result as string, illustrationFile: file }
-            : page
-        )
-      }))
+      setPages(prev => prev.map((page, index) =>
+        index === pageIndex
+          ? { ...page, illustration: reader.result as string, illustrationFile: file }
+          : page
+      ))
       setError(null)
     }
     reader.readAsDataURL(file)
   }
 
-  const handlePageAudioUpload = (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number, file: File) => {
+  const handlePageAudioUpload = (pageIndex: number, language: 'indonesian' | 'sundanese' | 'english', file: File) => {
     if (!file.type.startsWith('audio/')) {
       setError('File harus berupa audio')
       return
@@ -140,110 +163,111 @@ export default function CreateStoryPage() {
       return
     }
 
-    setFormData(prev => ({
-      ...prev,
-      [language]: prev[language].map((page, index) =>
-        index === pageIndex
-          ? { ...page, audioFile: file }
-          : page
-      )
-    }))
+    setPages(prev => prev.map((page, index) =>
+      index === pageIndex
+        ? {
+            ...page,
+            audioFiles: {
+              ...page.audioFiles,
+              [language]: file
+            }
+          }
+        : page
+    ))
     setError(null)
   }
 
-  const loadGeminiStorybook = async () => {
-    if (!geminiUrl.trim()) {
-      setError('Masukkan URL Gemini Storybook')
+  const addPage = () => {
+    const newPageNumber = pages.length + 1
+    setPages([
+      ...pages,
+      {
+        pageNumber: newPageNumber,
+        text: "",
+        illustration: "",
+        illustrationFile: undefined,
+        audioFiles: {
+          indonesian: undefined,
+          sundanese: undefined,
+          english: undefined,
+        },
+        generatingIllustration: false,
+        generatingAudio: false,
+      }
+    ])
+    setStoryText(prev => ({
+      ...prev,
+      indonesian: [...prev.indonesian, ""],
+      sundanese: [...prev.sundanese, ""],
+      english: [...prev.english, ""],
+    }))
+  }
+
+  const removePage = (pageIndex: number) => {
+    if (pages.length === 1) {
+      setError('Minimal harus ada satu halaman')
       return
     }
-
-    setGeminiLoading(true)
-    setError(null)
-
-    try {
-      const response = await fetch('/api/gemini/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ geminiUrl })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Gagal memuat Storybook')
-      }
-
-      const data = await response.json()
-
-      setFormData(prev => ({
-        ...prev,
-        title: data.title || "",
-        coverImage: data.coverImage || "",
-        indonesian: data.content?.indonesian || [],
-        sundanese: data.content?.sundanese || [],
-        english: data.content?.english || [],
-        geminiSourceUrl: geminiUrl
-      }))
-
-      setGeminiLoaded(true)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Terjadi kesalahan')
-      setGeminiLoaded(false)
-    } finally {
-      setGeminiLoading(false)
-    }
-  }
-
-  const addPage = (language: 'indonesian' | 'sundanese' | 'english') => {
-    setFormData((prev) => ({
+    setPages(prev => prev.filter((_, index) => index !== pageIndex))
+    setStoryText(prev => ({
       ...prev,
-      [language]: [...prev[language], { pageNumber: prev[language].length + 1, text: "", illustration: "", illustrationFile: undefined, audioFile: undefined, generatingIllustration: false, generatingAudio: false }],
-    }))
-  }
-
-  const removePage = (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      [language]: prev[language]
-        .filter((_, index) => index !== pageIndex)
-        .map((page, index) => ({ ...page, pageNumber: index + 1 })),
+      indonesian: prev.indonesian.filter((_, index) => index !== pageIndex),
+      sundanese: prev.sundanese.filter((_, index) => index !== pageIndex),
+      english: prev.english.filter((_, index) => index !== pageIndex),
     }))
   }
 
   const updatePageText = (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number, text: string) => {
-    setFormData((prev) => ({
+    setStoryText(prev => ({
       ...prev,
-      [language]: prev[language].map((page, index) => (index === pageIndex ? { ...page, text } : page)),
+      [language]: prev[language].map((t, index) => index === pageIndex ? text : t)
     }))
   }
 
-  const movePageUp = (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number) => {
+  const movePageUp = (pageIndex: number) => {
     if (pageIndex === 0) return
 
-    setFormData((prev) => {
-      const pages = [...prev[language]]
-      const temp = pages[pageIndex]
-      pages[pageIndex] = pages[pageIndex - 1]
-      pages[pageIndex - 1] = temp
-      pages[pageIndex].pageNumber = pageIndex + 1
-      pages[pageIndex - 1].pageNumber = pageIndex
-      return { ...prev, [language]: pages }
+    setPages(prev => {
+      const newPages = [...prev]
+      const temp = newPages[pageIndex]
+      newPages[pageIndex] = newPages[pageIndex - 1]
+      newPages[pageIndex - 1] = temp
+      return newPages
     })
+
+    setStoryText(prev => ({
+      ...prev,
+      indonesian: moveArrayItem(prev.indonesian, pageIndex, pageIndex - 1),
+      sundanese: moveArrayItem(prev.sundanese, pageIndex, pageIndex - 1),
+      english: moveArrayItem(prev.english, pageIndex, pageIndex - 1),
+    }))
   }
 
-  const movePageDown = (language: 'indonesian' | 'sundanese' | 'english', pageIndex: number) => {
-    const pages = formData[language]
+  const movePageDown = (pageIndex: number) => {
     if (pageIndex === pages.length - 1) return
 
-    setFormData((prev) => {
-      const newPages = [...prev[language]]
+    setPages(prev => {
+      const newPages = [...prev]
       const temp = newPages[pageIndex]
       newPages[pageIndex] = newPages[pageIndex + 1]
       newPages[pageIndex + 1] = temp
-      newPages[pageIndex].pageNumber = pageIndex + 1
-      newPages[pageIndex + 1].pageNumber = pageIndex + 2
-      return { ...prev, [language]: newPages }
+      return newPages
     })
+
+    setStoryText(prev => ({
+      ...prev,
+      indonesian: moveArrayItem(prev.indonesian, pageIndex, pageIndex + 1),
+      sundanese: moveArrayItem(prev.sundanese, pageIndex, pageIndex + 1),
+      english: moveArrayItem(prev.english, pageIndex, pageIndex + 1),
+    }))
+  }
+
+  const moveArrayItem = (arr: string[], fromIndex: number, toIndex: number) => {
+    const newArr = [...arr]
+    const temp = newArr[fromIndex]
+    newArr[fromIndex] = newArr[toIndex]
+    newArr[toIndex] = temp
+    return newArr
   }
 
   const handleInputChange = (field: string, value: string | boolean) => {
@@ -258,9 +282,7 @@ export default function CreateStoryPage() {
       return
     }
 
-    // Validasi berdasarkan upload mode
     if (uploadMode === 'gemini') {
-      // Gemini story validation
       if (!formData.geminiUrl.trim()) {
         setError("Link Gemini Storybook wajib diisi")
         return
@@ -277,7 +299,7 @@ export default function CreateStoryPage() {
       }
     } else {
       // Manual story validation
-      if (!formData.indonesian.some((page) => page.text.trim())) {
+      if (!storyText.indonesian.some(text => text.trim())) {
         setError("Minimal satu halaman cerita dalam Bahasa Indonesia wajib diisi")
         return
       }
@@ -287,7 +309,6 @@ export default function CreateStoryPage() {
 
     try {
       if (uploadMode === 'gemini') {
-        // Create Gemini story
         const geminiFormData = new FormData()
         geminiFormData.append('title', formData.title)
         geminiFormData.append('geminiUrl', formData.geminiUrl)
@@ -321,50 +342,46 @@ export default function CreateStoryPage() {
           formDataToSend.append('coverImage', formData.coverImageFile)
         }
 
+        // Build content structure with shared illustrations
         const content: Record<string, any> = {}
+        const languages = ['indonesian', 'sundanese', 'english'] as const
 
-        if (formData.indonesian.some((page) => page.text.trim())) {
-          content.indonesian = formData.indonesian
-            .filter((page) => page.text.trim())
-            .map((page, index) => ({
-              pageNumber: index + 1,
-              text: page.text,
-            }))
+        for (const lang of languages) {
+          const langText = storyText[lang]
+          if (langText.some(text => text.trim())) {
+            content[lang] = langText
+              .map((text, index) => ({
+                pageNumber: index + 1,
+                text: text,
+              }))
+              .filter(page => page.text.trim())
+          }
         }
 
-        if (formData.sundanese.some((page) => page.text.trim())) {
-          content.sundanese = formData.sundanese
-            .filter((page) => page.text.trim())
-            .map((page, index) => ({
-              pageNumber: index + 1,
-              text: page.text,
-            }))
-        }
-
-        if (formData.english.some((page) => page.text.trim())) {
-          content.english = formData.english
-            .filter((page) => page.text.trim())
-            .map((page, index) => ({
-              pageNumber: index + 1,
-              text: page.text,
-            }))
+        if (Object.keys(content).length === 0) {
+          setError("Minimal ada satu halaman dengan teks")
+          setIsLoading(false)
+          return
         }
 
         formDataToSend.append('content', JSON.stringify(content))
 
-        const langs = ['indonesian', 'sundanese', 'english'] as const
+        // Add shared illustrations
+        pages.forEach((page, pageIndex) => {
+          if (page.illustrationFile && page.illustrationFile instanceof File) {
+            formDataToSend.append(`illustration_${pageIndex}`, page.illustrationFile)
+          }
+        })
 
-        langs.forEach(lang => {
-          formData[lang].forEach((page, pageIndex) => {
-            if (page.text.trim()) {
-              if (page.illustrationFile && page.illustrationFile instanceof File) {
-                formDataToSend.append(`illustration_${lang}_${pageIndex}`, page.illustrationFile)
-              }
-              if (page.audioFile && page.audioFile instanceof File) {
-                formDataToSend.append(`audio_${lang}_${pageIndex}`, page.audioFile)
+        // Add per-language audio
+        pages.forEach((page, pageIndex) => {
+          if (page.audioFiles) {
+            for (const [lang, audioFile] of Object.entries(page.audioFiles)) {
+              if (audioFile && audioFile instanceof File) {
+                formDataToSend.append(`audio_${lang}_${pageIndex}`, audioFile)
               }
             }
-          })
+          }
         })
 
         const response = await fetch('/api/stories', {
@@ -388,40 +405,35 @@ export default function CreateStoryPage() {
     }
   }
 
-  const renderPageSection = (language: 'indonesian' | 'sundanese' | 'english', langLabel: string, isRequired: boolean) => {
-    const pages = formData[language]
-    const borderColor = language === 'indonesian' ? 'border-l-primary' : language === 'sundanese' ? 'border-l-secondary' : 'border-l-accent'
-
+  const renderPageSection = () => {
     return (
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <Label>Halaman Cerita {langLabel} {isRequired ? '*' : '(Opsional)'}</Label>
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => addPage(language)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Tambah Halaman
-            </Button>
-          </div>
+          <Label>Halaman Cerita *</Label>
+          <Button type="button" variant="outline" size="sm" onClick={addPage}>
+            <Plus className="h-4 w-4 mr-2" />
+            Tambah Halaman
+          </Button>
         </div>
 
-        {pages.map((page, index) => (
-          <Card key={index} className={`border-l-4 ${borderColor}`}>
+        {pages.map((page, pageIndex) => (
+          <Card key={pageIndex} className="border-l-4 border-l-primary">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">Halaman {page.pageNumber}</CardTitle>
                 <div className="flex items-center space-x-2">
-                  {index > 0 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => movePageUp(language, index)}>
+                  {pageIndex > 0 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => movePageUp(pageIndex)}>
                       <MoveUp className="h-4 w-4" />
                     </Button>
                   )}
-                  {index < pages.length - 1 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => movePageDown(language, index)}>
+                  {pageIndex < pages.length - 1 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => movePageDown(pageIndex)}>
                       <MoveDown className="h-4 w-4" />
                     </Button>
                   )}
                   {pages.length > 1 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => removePage(language, index)}>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => removePage(pageIndex)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   )}
@@ -429,97 +441,109 @@ export default function CreateStoryPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Shared Illustration */}
               <div>
-                <Label>Teks Halaman</Label>
-                <Textarea
-                  placeholder={`Tulis konten halaman ${page.pageNumber}...`}
-                  className="min-h-[100px]"
-                  value={page.text}
-                  onChange={(e) => updatePageText(language, index, e.target.value)}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label>Ilustrasi Halaman (Opsional)</Label>
-                  </div>
-                  <div className="mt-1">
-                    {page.illustration ? (
-                      <div className="relative inline-block">
-                        <img
-                          src={page.illustration}
-                          alt={`Ilustrasi halaman ${page.pageNumber}`}
-                          className="h-32 w-40 object-cover rounded border"
-                        />
-                        <button
-                          onClick={() => setFormData(prev => ({
-                            ...prev,
-                            [language]: prev[language].map((p, i) =>
-                              i === index ? { ...p, illustration: '', illustrationFile: undefined } : p
-                            )
-                          }))}
-                          className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
+                <Label className="mb-2 block">Ilustrasi Halaman (Sama untuk Semua Bahasa) *</Label>
+                <div className="mt-1">
+                  {page.illustration ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={page.illustration}
+                        alt={`Ilustrasi halaman ${page.pageNumber}`}
+                        className="h-32 w-40 object-cover rounded border"
+                      />
+                      <button
+                        onClick={() => setPages(prev => prev.map((p, i) =>
+                          i === pageIndex ? { ...p, illustration: '', illustrationFile: undefined } : p
+                        ))}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center w-40 h-32 border-2 border-dashed rounded cursor-pointer hover:bg-muted transition-colors">
+                      <div className="text-center">
+                        <ImageIcon className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Upload Gambar</span>
                       </div>
-                    ) : (
-                      <label className="flex items-center justify-center w-40 h-32 border-2 border-dashed rounded cursor-pointer hover:bg-muted transition-colors">
-                        <div className="text-center">
-                          <ImageIcon className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">Upload Gambar</span>
-                        </div>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => e.target.files?.[0] && handlePageIllustrationUpload(language, index, e.target.files[0])}
-                        />
-                      </label>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label>Audio Halaman (Opsional)</Label>
-                  </div>
-                  <div className="mt-1 space-y-2">
-                    {page.audioFile ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between bg-muted p-2 rounded text-sm">
-                          <span className="truncate flex-1">{typeof page.audioFile === 'string' ? page.audioFile : page.audioFile.name}</span>
-                          <button
-                            onClick={() => setFormData(prev => ({
-                              ...prev,
-                              [language]: prev[language].map((p, i) =>
-                                i === index ? { ...p, audioFile: undefined } : p
-                              )
-                            }))}
-                            className="text-red-500 hover:text-red-600"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <label className="flex items-center justify-center border-2 border-dashed rounded p-3 cursor-pointer hover:bg-muted transition-colors">
-                        <div className="text-center">
-                          <Volume2 className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
-                          <span className="text-xs text-muted-foreground">Upload Audio</span>
-                        </div>
-                        <input
-                          type="file"
-                          accept="audio/*"
-                          className="hidden"
-                          onChange={(e) => e.target.files?.[0] && handlePageAudioUpload(language, index, e.target.files[0])}
-                        />
-                      </label>
-                    )}
-                  </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => e.target.files?.[0] && handlePageIllustrationUpload(pageIndex, e.target.files[0])}
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
+
+              {/* Language-specific text and audio */}
+              <Tabs defaultValue="indonesian" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="indonesian">🇮🇩 Indonesia</TabsTrigger>
+                  <TabsTrigger value="sundanese">🗣️ Sunda</TabsTrigger>
+                  <TabsTrigger value="english">🇬🇧 English</TabsTrigger>
+                </TabsList>
+
+                {(['indonesian', 'sundanese', 'english'] as const).map(lang => (
+                  <TabsContent key={lang} value={lang} className="space-y-4 mt-4">
+                    <div>
+                      <Label htmlFor={`text-${lang}-${pageIndex}`}>
+                        Teks Halaman {lang === 'indonesian' ? '*' : '(Opsional)'}
+                      </Label>
+                      <Textarea
+                        id={`text-${lang}-${pageIndex}`}
+                        placeholder={`Tulis teks halaman ${page.pageNumber} dalam ${lang}...`}
+                        className="min-h-[100px]"
+                        value={storyText[lang][pageIndex] || ""}
+                        onChange={(e) => updatePageText(lang, pageIndex, e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block">Audio Halaman (Opsional)</Label>
+                      <div className="mt-1 space-y-2">
+                        {page.audioFiles?.[lang] ? (
+                          <div className="flex items-center justify-between bg-muted p-2 rounded text-sm">
+                            <span className="truncate flex-1">
+                              {typeof page.audioFiles[lang] === 'string' 
+                                ? page.audioFiles[lang] 
+                                : (page.audioFiles[lang] as File).name}
+                            </span>
+                            <button
+                              onClick={() => setPages(prev => prev.map((p, i) =>
+                                i === pageIndex
+                                  ? {
+                                      ...p,
+                                      audioFiles: { ...p.audioFiles, [lang]: undefined }
+                                    }
+                                  : p
+                              ))}
+                              className="text-red-500 hover:text-red-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex items-center justify-center border-2 border-dashed rounded p-3 cursor-pointer hover:bg-muted transition-colors">
+                            <div className="text-center">
+                              <Volume2 className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Upload Audio</span>
+                            </div>
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              className="hidden"
+                              onChange={(e) => e.target.files?.[0] && handlePageAudioUpload(pageIndex, lang, e.target.files[0])}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  </TabsContent>
+                ))}
+              </Tabs>
             </CardContent>
           </Card>
         ))}
@@ -537,7 +561,9 @@ export default function CreateStoryPage() {
           </Link>
         </Button>
         <h1 className="text-3xl font-bold text-foreground mb-2">Buat Cerita Baru</h1>
-        <p className="text-lg text-muted-foreground">Buat cerita dengan teks, ilustrasi, dan audio untuk setiap halaman atau import dari Gemini Storybook</p>
+        <p className="text-lg text-muted-foreground">
+          Buat cerita dengan teks, ilustrasi, dan audio untuk setiap halaman atau import dari Gemini Storybook
+        </p>
       </div>
 
       {error && (
@@ -564,7 +590,7 @@ export default function CreateStoryPage() {
               >
                 <h3 className="font-semibold mb-2">Upload Manual</h3>
                 <p className="text-sm text-muted-foreground">
-                  Upload gambar sampul, teks, ilustrasi, dan audio secara manual untuk setiap halaman cerita.
+                  Upload gambar sampul, teks, ilustrasi, dan audio secara manual untuk setiap halaman cerita. Satu ilustrasi per halaman untuk semua bahasa.
                 </p>
               </div>
 
@@ -676,29 +702,11 @@ export default function CreateStoryPage() {
               <CardHeader>
                 <CardTitle>Konten Cerita</CardTitle>
                 <CardDescription>
-                  Tambahkan teks, ilustrasi, dan narasi audio untuk setiap halaman
+                  Satu ilustrasi per halaman digunakan untuk semua bahasa. Teks dan audio dapat berbeda untuk setiap bahasa.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Tabs defaultValue="indonesian" className="space-y-4">
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="indonesian">Bahasa Indonesia *</TabsTrigger>
-                    <TabsTrigger value="sundanese">Basa Sunda</TabsTrigger>
-                    <TabsTrigger value="english">English</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="indonesian">
-                    {renderPageSection('indonesian', 'dalam Bahasa Indonesia', true)}
-                  </TabsContent>
-
-                  <TabsContent value="sundanese">
-                    {renderPageSection('sundanese', 'dalam Basa Sunda', false)}
-                  </TabsContent>
-
-                  <TabsContent value="english">
-                    {renderPageSection('english', 'in English', false)}
-                  </TabsContent>
-                </Tabs>
+                {renderPageSection()}
               </CardContent>
             </Card>
           </>

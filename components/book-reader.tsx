@@ -49,12 +49,10 @@ export function BookReader({ story, onProgressUpdate }: BookReaderProps) {
   const getStoryPages = (): StoryPage[] => {
     const content = story.content[selectedLanguage]
 
-    // Handle new StoryPage array structure with per-page audio
     if (Array.isArray(content)) {
       return content
     }
 
-    // Fallback for old string format - convert to StoryPage array
     if (typeof content === "string") {
       const sentences = content.split(". ").filter(Boolean)
       const pages: StoryPage[] = []

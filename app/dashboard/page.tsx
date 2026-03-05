@@ -5,7 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,7 +21,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Plus, BookOpen, Eye, Edit, Trash2, MoreHorizontal, Upload, BarChart3, Cloud } from "lucide-react"
 import Link from "next/link"
@@ -26,6 +31,8 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const [stories, setStories] = useState<Story[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [storyToDelete, setStoryToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchStories = async () => {
@@ -83,12 +90,57 @@ export default function DashboardPage() {
   const geminiStories = stories.filter((story) => story.gemini_source_url)
   const manualStories = stories.filter((story) => !story.gemini_source_url)
 
-  const handleDeleteStory = (storyId: string) => {
-    setStories(stories.filter((story) => story.id !== storyId))
+  const handleDeleteClick = (storyId: string) => {
+    setStoryToDelete(storyId)
+    setDeleteDialogOpen(true)
   }
 
-  const handleTogglePublish = (storyId: string) => {
-    setStories(stories.map((story) => (story.id === storyId ? { ...story, isPublished: !story.isPublished } : story)))
+  const handleConfirmDelete = async () => {
+    if (!storyToDelete) return
+
+    try {
+      const response = await fetch(`/api/stories/${storyToDelete}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        setStories(stories.filter((story) => story.id !== storyToDelete))
+        setDeleteDialogOpen(false)
+        setStoryToDelete(null)
+      } else {
+        alert('Gagal menghapus cerita')
+      }
+    } catch (error) {
+      console.error('Error deleting story:', error)
+      alert('Terjadi kesalahan saat menghapus cerita')
+    }
+  }
+
+  const handleTogglePublish = async (storyId: string) => {
+    const story = stories.find(s => s.id === storyId)
+    if (!story) return
+
+    try {
+      const response = await fetch(`/api/stories/${storyId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...story,
+          isPublished: !story.isPublished
+        })
+      })
+
+      if (response.ok) {
+        setStories(stories.map((s) => 
+          s.id === storyId ? { ...s, isPublished: !s.isPublished } : s
+        ))
+      } else {
+        alert('Gagal mengubah status cerita')
+      }
+    } catch (error) {
+      console.error('Error toggling publish:', error)
+      alert('Terjadi kesalahan saat mengubah status cerita')
+    }
   }
 
   const getStoryPreview = (story: Story) => {
@@ -200,7 +252,7 @@ export default function DashboardPage() {
         <TabsContent value="all">
           <StoryList
             stories={stories}
-            onDelete={handleDeleteStory}
+            onDelete={handleDeleteClick}
             onTogglePublish={handleTogglePublish}
             getStoryPreview={getStoryPreview}
             isGeminiStory={isGeminiStory}
@@ -210,7 +262,7 @@ export default function DashboardPage() {
         <TabsContent value="published">
           <StoryList
             stories={publishedStories}
-            onDelete={handleDeleteStory}
+            onDelete={handleDeleteClick}
             onTogglePublish={handleTogglePublish}
             getStoryPreview={getStoryPreview}
             isGeminiStory={isGeminiStory}
@@ -220,7 +272,7 @@ export default function DashboardPage() {
         <TabsContent value="drafts">
           <StoryList
             stories={draftStories}
-            onDelete={handleDeleteStory}
+            onDelete={handleDeleteClick}
             onTogglePublish={handleTogglePublish}
             getStoryPreview={getStoryPreview}
             isGeminiStory={isGeminiStory}
@@ -230,13 +282,34 @@ export default function DashboardPage() {
         <TabsContent value="gemini">
           <StoryList
             stories={geminiStories}
-            onDelete={handleDeleteStory}
+            onDelete={handleDeleteClick}
             onTogglePublish={handleTogglePublish}
             getStoryPreview={getStoryPreview}
             isGeminiStory={isGeminiStory}
           />
         </TabsContent>
       </Tabs>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Cerita</AlertDialogTitle>
+            <AlertDialogDescription>
+              Apakah Anda yakin ingin menghapus cerita ini? Tindakan ini tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -290,90 +363,83 @@ function StoryList({ stories, onDelete, onTogglePublish, getStoryPreview, isGemi
             </div>
 
             {/* Story Info */}
-            <div className="flex-1 p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <h3 className="text-lg font-semibold text-foreground">{story.title}</h3>
-                    <Badge variant={story.isPublished ? "default" : "secondary"}>
-                      {story.isPublished ? "Dipublikasikan" : "Draft"}
+            <div className="flex-1 p-6 flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center space-x-2 mb-2">
+                  <h3 className="text-lg font-semibold text-foreground">{story.title}</h3>
+                  <Badge variant={story.isPublished ? "default" : "secondary"}>
+                    {story.isPublished ? "Dipublikasikan" : "Draft"}
+                  </Badge>
+                  {isGeminiStory(story) && (
+                    <Badge className="bg-blue-500/90 flex items-center gap-1">
+                      <Cloud className="h-3 w-3" />
+                      Gemini
                     </Badge>
-                    {isGeminiStory(story) && (
-                      <Badge className="bg-blue-500/90 flex items-center gap-1">
-                        <Cloud className="h-3 w-3" />
-                        Gemini
-                      </Badge>
-                    )}
-                  </div>
-
-                  <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{getStoryPreview(story)}</p>
-
-                  <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                    <span>Bahasa: {Object.keys(story.content).length}</span>
-                    {isGeminiStory(story) && (
-                      <span className="text-blue-600">📚 Dari Gemini Storybook</span>
-                    )}
-                  </div>
+                  )}
                 </div>
 
-                {/* Actions */}
+                <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{getStoryPreview(story)}</p>
+
+                <div className="flex items-center space-x-4 text-xs text-muted-foreground">
+                  <span>Bahasa: {Object.keys(story.content).length}</span>
+                  {isGeminiStory(story) && (
+                    <span className="text-blue-600">📚 Dari Gemini Storybook</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions Dropdown */}
+              <div className="flex-shrink-0">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                       <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Buka menu</span>
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className="w-56">
                     <DropdownMenuItem asChild>
-                      <Link href={`/stories/${story.id}`}>
+                      <Link href={`/stories/${story.id}`} className="cursor-pointer">
                         <Eye className="mr-2 h-4 w-4" />
-                        Lihat
+                        <span>Lihat</span>
                       </Link>
                     </DropdownMenuItem>
+
                     <DropdownMenuItem asChild>
-                      <Link href={`/dashboard/edit/${story.id}`}>
+                      <Link href={`/dashboard/edit/${story.id}`} className="cursor-pointer">
                         <Edit className="mr-2 h-4 w-4" />
-                        Edit
+                        <span>Edit</span>
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onTogglePublish(story.id)}>
+
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem
+                      onClick={() => onTogglePublish(story.id)}
+                      className="cursor-pointer"
+                    >
                       {story.isPublished ? (
                         <>
                           <Edit className="mr-2 h-4 w-4" />
-                          Jadikan Draft
+                          <span>Jadikan Draft</span>
                         </>
                       ) : (
                         <>
                           <Eye className="mr-2 h-4 w-4" />
-                          Publikasikan
+                          <span>Publikasikan</span>
                         </>
                       )}
                     </DropdownMenuItem>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Hapus
-                        </DropdownMenuItem>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Hapus Cerita</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Apakah Anda yakin ingin menghapus cerita "{story.title}"? Tindakan ini tidak dapat dibatalkan.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Batal</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => onDelete(story.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                          >
-                            Hapus
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+
+                    <DropdownMenuSeparator />
+
+                    <DropdownMenuItem
+                      onClick={() => onDelete(story.id)}
+                      className="cursor-pointer text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      <span>Hapus</span>
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

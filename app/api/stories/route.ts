@@ -1,4 +1,4 @@
-// app/api/stories/route.ts
+// app/api/stories/route.ts - UPDATED VERSION
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getDatabaseService } from '@/lib/db-service';
@@ -46,7 +46,10 @@ export async function GET(request: NextRequest) {
         author_name TEXT NOT NULL,
         is_published INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        gemini_source_url TEXT,
+        gemini_embed_url TEXT,
+        gemini_id TEXT
       );
 
       CREATE TABLE IF NOT EXISTS story_pages (
@@ -157,7 +160,8 @@ export async function GET(request: NextRequest) {
         authorName: story.author_name,
         isPublished: Boolean(story.is_published),
         createdAt: new Date(story.created_at),
-        updatedAt: new Date(story.updated_at)
+        updatedAt: new Date(story.updated_at),
+        gemini_source_url: story.gemini_source_url || null
       };
     });
 
@@ -265,6 +269,10 @@ export async function POST(request: NextRequest) {
 
     const languages = ['indonesian', 'sundanese', 'english'] as const;
 
+    // Track which illustrations we've already handled
+    const handledIllustrations = new Set<number>();
+    const illusts:Record<number, string> = {};
+
     for (const language of languages) {
       const pages = content[language];
       if (!Array.isArray(pages) || pages.length === 0) {
@@ -274,18 +282,27 @@ export async function POST(request: NextRequest) {
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
         const page = pages[pageIndex];
 
+        // Shared illustration (only upload once, for indonesian)
         let illustrationPath = null;
-        const illustrationKey = `illustration_${language}_${pageIndex}`;
-        const illustrationFile = formData.get(illustrationKey) as File | null;
+        if (!handledIllustrations.has(pageIndex) && language === 'indonesian') {
+          const illustrationKey = `illustration_${pageIndex}`;
+          const illustrationFile = formData.get(illustrationKey) as File | null;
 
-        if (illustrationFile && illustrationFile.size > 0) {
-          try {
-            illustrationPath = await handleFileUpload(illustrationFile, 'illustrations');
-          } catch (error) {
-            return NextResponse.json(
-              { error: `Failed to upload illustration for ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
-              { status: 400 }
-            );
+          if (illustrationFile && illustrationFile.size > 0) {
+            try {
+              illustrationPath = await handleFileUpload(illustrationFile, 'illustrations');
+              handledIllustrations.add(pageIndex);
+              illusts[pageIndex] = illustrationPath;
+            } catch (error) {
+              return NextResponse.json(
+                { error: `Failed to upload illustration for page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
+                { status: 400 }
+              );
+            }
+          }
+        } else if (handledIllustrations.has(pageIndex) && language !== 'indonesian') {
+          if (illusts[pageIndex]) {
+            illustrationPath = illusts[pageIndex];
           }
         }
 
@@ -304,7 +321,7 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Handle per-page audio
+        // Handle per-language audio
         const audioKey = `audio_${language}_${pageIndex}`;
         const audioFile = formData.get(audioKey) as File | null;
 
@@ -336,7 +353,6 @@ export async function POST(request: NextRequest) {
 
     // Clear cache after successful upload
     try {
-      // Revalidate all relevant paths
       revalidatePath('/dashboard');
       revalidatePath('/dashboard/create');
       revalidatePath('/stories');
@@ -345,7 +361,6 @@ export async function POST(request: NextRequest) {
       revalidatePath(`/api/stories/${storyId}`);
     } catch (error) {
       console.error('Cache revalidation error:', error);
-      // Don't fail the request if cache revalidation fails
     }
 
     return NextResponse.json({
