@@ -178,30 +178,7 @@ export default function EditStoryPage({
     reader.readAsDataURL(file)
   }
 
-  const handlePageIllustrationUpload = (pageIndex: number, file: File) => {
-    if (!file.type.startsWith("image/")) {
-      setError("File harus berupa gambar")
-      return
-    }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Ukuran file maksimal 5MB")
-      return
-    }
-
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setPages((prev) =>
-        prev.map((page, index) =>
-          index === pageIndex
-            ? { ...page, illustration: reader.result as string, illustrationFile: file }
-            : page
-        )
-      )
-      setError(null)
-    }
-    reader.readAsDataURL(file)
-  }
 
   const handlePageAudioUpload = (
     pageIndex: number,
@@ -286,6 +263,10 @@ export default function EditStoryPage({
 
       console.log("📝 Content being sent:", content)
 
+      // ✅ FIXED: Don't send illustrations array at all
+      // This prevents any accidental deletion of illustrations
+      // API will preserve existing illustrations automatically
+
       // ✅ FIXED: Send as JSON with proper structure
       const response = await fetch(`/api/stories/${params.id}`, {
         method: "PUT",
@@ -296,9 +277,7 @@ export default function EditStoryPage({
           title: formData.title.trim(),
           content: content,
           isPublished: publish,
-          illustrations: pages
-            .map((p) => p.illustration)
-            .filter((ill) => ill && typeof ill === "string"),
+          // ✅ Don't include illustrations - preserve existing ones
           audioFiles: {},
         }),
       })
@@ -539,51 +518,19 @@ export default function EditStoryPage({
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {/* Shared Illustration */}
-                    <div>
-                      <Label className="mb-2 block">Ilustrasi Halaman</Label>
-                      <div className="mt-1">
-                        {page.illustration ? (
-                          <div className="relative inline-block">
-                            <img
-                              src={page.illustration}
-                              alt={`Ilustrasi halaman ${page.pageNumber}`}
-                              className="h-32 w-40 object-cover rounded border"
-                            />
-                            <button
-                              onClick={() =>
-                                setPages((prev) =>
-                                  prev.map((p, i) =>
-                                    i === pageIndex
-                                      ? { ...p, illustration: "", illustrationFile: undefined }
-                                      : p
-                                  )
-                                )
-                              }
-                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ) : (
-                          <label className="flex items-center justify-center w-40 h-32 border-2 border-dashed rounded cursor-pointer hover:bg-muted transition-colors">
-                            <div className="text-center">
-                              <ImageIcon className="h-6 w-6 mx-auto mb-1 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">Upload Gambar</span>
-                            </div>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) =>
-                                e.target.files?.[0] &&
-                                handlePageIllustrationUpload(pageIndex, e.target.files[0])
-                              }
-                            />
-                          </label>
-                        )}
+                    {/* Display Existing Illustration (Read-only) */}
+                    {page.illustration && (
+                      <div>
+                        <Label className="mb-2 block text-sm text-muted-foreground">Ilustrasi Halaman (Tidak dapat diubah)</Label>
+                        <div className="relative inline-block">
+                          <img
+                            src={page.illustration}
+                            alt={`Ilustrasi halaman ${page.pageNumber}`}
+                            className="h-32 w-40 object-cover rounded border opacity-75"
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Language-specific text and audio */}
                     <Tabs defaultValue="indonesian" className="w-full">
