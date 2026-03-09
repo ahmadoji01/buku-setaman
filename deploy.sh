@@ -1,13 +1,15 @@
 #!/bin/bash
 
 ################################################################################
-# 🚀 Buku Setaman Automated Deployment Script
+# 🚀 Buku Setaman Automated Deployment Script (CLOUDFLARE VERSION)
 # ============================================
 # Server: Ubuntu 22.04.5 LTS
 # IP: 202.74.75.223
 # Domain: buku-setaman.com
+# Certificates: /root/cert/certificate.crt and /root/cert/private.key
 #
-# Usage: bash deploy.sh
+# Usage: sudo bash deploy-cloudflare.sh "https://github.com/username/repo.git"
+# Or: sudo bash deploy-cloudflare.sh
 ################################################################################
 
 set -e  # Exit on error
@@ -19,13 +21,36 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
+################################################################################
+# CONFIGURATION - EDIT HERE IF NEEDED
+################################################################################
+
+# Git Repository URL - bisa juga di-pass sebagai argument
+if [ -z "$1" ]; then
+    # Gunakan default atau tanya user
+    GIT_REPO="${GIT_REPO:-}"
+    
+    # Jika masih kosong, tanya user
+    if [ -z "$GIT_REPO" ]; then
+        echo -e "${BLUE}[?]${NC} Git Repository URL not provided"
+        read -p "Enter your Git repository URL (e.g., https://github.com/username/buku-setaman.git): " GIT_REPO
+    fi
+else
+    # Gunakan argument pertama
+    GIT_REPO="$1"
+fi
+
+# Domain & Server Configuration
 DOMAIN="buku-setaman.com"
 IP_ADDRESS="202.74.75.223"
 APP_DIR="/opt/buku-setaman"
 APP_PORT="3000"
 APP_USER="root"
-GIT_REPO="${GIT_REPO:-}"  # Set this before running: export GIT_REPO="your-repo-url"
+
+# Certificate paths
+CERT_DIR="/home/admin-buku-setaman"
+CERT_FILE="$CERT_DIR/certificate.crt"
+CERT_KEY="$CERT_DIR/private.key"
 
 ################################################################################
 # Helper Functions
@@ -47,6 +72,10 @@ log_error() {
     echo -e "${RED}[✗]${NC} $1"
 }
 
+log_separator() {
+    echo "========================================"
+}
+
 check_command() {
     if command -v $1 &> /dev/null; then
         log_success "$1 is installed"
@@ -63,13 +92,13 @@ check_command() {
 
 step_system_update() {
     log_info "Step 1: System Update"
-    echo "========================================"
+    log_separator
     
     log_info "Updating package lists..."
-    sudo apt update
+    apt update
     
     log_info "Upgrading packages..."
-    sudo apt upgrade -y
+    apt upgrade -y
     
     log_success "System updated successfully"
     echo ""
@@ -81,19 +110,19 @@ step_system_update() {
 
 step_install_dependencies() {
     log_info "Step 2: Installing Dependencies"
-    echo "========================================"
+    log_separator
     
     # Build tools
     log_info "Installing build tools..."
-    sudo apt install -y build-essential curl wget git
+    apt install -y build-essential curl wget git nano
     
     # Node.js
     if check_command node; then
         log_warning "Node.js already installed"
     else
         log_info "Installing Node.js v18 LTS..."
-        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-        sudo apt install -y nodejs
+        curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+        apt install -y nodejs
     fi
     
     # Verify Node.js
@@ -107,10 +136,14 @@ step_install_dependencies() {
         log_warning "Nginx already installed"
     else
         log_info "Installing Nginx..."
-        sudo apt install -y nginx
-        sudo systemctl enable nginx
-        sudo systemctl start nginx
+        apt install -y nginx
+        systemctl enable nginx
+        systemctl start nginx
     fi
+    
+    # SQLite3
+    log_info "Installing SQLite3..."
+    apt install -y sqlite3
     
     log_success "Dependencies installed successfully"
     echo ""
@@ -122,27 +155,32 @@ step_install_dependencies() {
 
 step_setup_app_directory() {
     log_info "Step 3: Setting up Application Directory"
-    echo "========================================"
+    log_separator
     
+    # Validate Git repo URL
     if [ -z "$GIT_REPO" ]; then
-        log_error "GIT_REPO not set!"
-        log_info "Please set: export GIT_REPO='your-repo-url'"
-        log_info "Then run this script again"
+        log_error "GIT_REPO is empty!"
         exit 1
     fi
     
+    log_info "Git Repository: $GIT_REPO"
+    
     if [ -d "$APP_DIR" ]; then
         log_warning "Application directory already exists: $APP_DIR"
-        log_info "Pulling latest changes..."
-        cd $APP_DIR
-        sudo git pull origin main
+        read -p "Pull latest changes? (y/n) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Pulling latest changes..."
+            cd $APP_DIR
+            git pull origin main 2>/dev/null || git pull origin master
+        fi
     else
         log_info "Cloning repository..."
-        sudo git clone $GIT_REPO $APP_DIR
+        git clone $GIT_REPO $APP_DIR
     fi
     
     log_info "Setting permissions..."
-    sudo chown -R $APP_USER:$APP_USER $APP_DIR
+    chown -R $APP_USER:$APP_USER $APP_DIR
     
     log_success "Application directory setup complete"
     echo ""
@@ -154,12 +192,12 @@ step_setup_app_directory() {
 
 step_build_application() {
     log_info "Step 4: Building Application"
-    echo "========================================"
+    log_separator
     
     cd $APP_DIR
     
     log_info "Installing NPM dependencies..."
-    npm install
+    npm install --legacy-peer-deps
     
     log_info "Building Next.js application..."
     npm run build
@@ -174,15 +212,19 @@ step_build_application() {
 
 step_setup_env() {
     log_info "Step 5: Setting up Environment Variables"
-    echo "========================================"
+    log_separator
     
     ENV_FILE="$APP_DIR/.env.local"
     
     if [ -f "$ENV_FILE" ]; then
         log_warning "Environment file already exists: $ENV_FILE"
-        log_info "Skipping environment setup"
-        echo ""
-        return
+        read -p "Regenerate environment file? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Keeping existing environment file"
+            echo ""
+            return
+        fi
     fi
     
     log_info "Creating .env.local file..."
@@ -214,8 +256,10 @@ PORT="$APP_PORT"
 NEXT_TELEMETRY_DISABLED=1
 EOF
 
+    chmod 600 $ENV_FILE
+    
     log_success "Environment variables created"
-    log_warning "File: $ENV_FILE"
+    log_info "File: $ENV_FILE"
     echo ""
 }
 
@@ -225,7 +269,7 @@ EOF
 
 step_create_upload_dirs() {
     log_info "Step 6: Creating Upload Directories"
-    echo "========================================"
+    log_separator
     
     log_info "Creating upload directories..."
     mkdir -p $APP_DIR/public/uploads/{covers,illustrations,audio,modules}
@@ -240,62 +284,66 @@ step_create_upload_dirs() {
 }
 
 ################################################################################
-# Step 7: Setup SSL Certificate
+# Step 7: Verify SSL Certificates
 ################################################################################
 
 step_setup_ssl() {
-    log_info "Step 7: Setting up SSL Certificate"
-    echo "========================================"
+    log_info "Step 7: Verifying SSL Certificates"
+    log_separator
     
-    # Check if certbot is installed
-    if ! check_command certbot; then
-        log_info "Installing Certbot..."
-        sudo apt install -y certbot python3-certbot-nginx
+    # Check if certificates exist
+    if [ -f "$CERT_FILE" ] && [ -f "$CERT_KEY" ]; then
+        log_success "Origin certificates found!"
+        log_info "Certificate: $CERT_FILE"
+        log_info "Private Key: $CERT_KEY"
+        
+        # Verify certificate permissions
+        log_info "Setting certificate permissions..."
+        chmod 644 $CERT_FILE
+        chmod 600 $CERT_KEY
+        
+        log_success "SSL certificates verified"
+        echo ""
+        return
     fi
     
-    log_warning "IMPORTANT: Make sure your domain DNS is pointing to $IP_ADDRESS"
-    log_info "Checking DNS..."
+    # Create certificate directory if not exists
+    log_warning "Certificates not found in $CERT_DIR"
+    log_info "Creating self-signed certificate..."
     
-    # Try to resolve domain
-    if nslookup $DOMAIN &> /dev/null; then
-        log_success "Domain is resolvable"
-        
-        log_info "Generating SSL certificate for $DOMAIN..."
-        sudo certbot certonly --nginx -d $DOMAIN --non-interactive --agree-tos --email admin@$DOMAIN
-        
-        log_success "SSL certificate generated"
-    else
-        log_warning "Domain is not resolvable yet"
-        log_info "Please ensure DNS is pointing to $IP_ADDRESS"
-        log_info "You can setup SSL later with:"
-        log_info "  sudo certbot certonly --nginx -d $DOMAIN"
-    fi
+    mkdir -p $CERT_DIR
+    
+    # Generate self-signed certificate
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout $CERT_KEY \
+      -out $CERT_FILE \
+      -subj "/C=ID/ST=Jakarta/L=Jakarta/O=Buku Setaman/CN=$DOMAIN"
+    
+    # Set permissions
+    chmod 644 $CERT_FILE
+    chmod 600 $CERT_KEY
+    
+    log_success "Self-signed certificate created"
+    log_info "Certificate: $CERT_FILE"
+    log_info "Private Key: $CERT_KEY"
     echo ""
 }
 
 ################################################################################
-# Step 8: Configure Nginx
+# Step 8: Configure Nginx with Cloudflare Support
 ################################################################################
 
 step_configure_nginx() {
-    log_info "Step 8: Configuring Nginx"
-    echo "========================================"
+    log_info "Step 8: Configuring Nginx (Cloudflare)"
+    log_separator
     
     log_info "Backing up default Nginx config..."
-    sudo cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.backup.$(date +%s)
+    cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.backup.$(date +%s)
     
-    log_info "Creating Nginx configuration..."
+    log_info "Creating Nginx configuration with Cloudflare support..."
     
-    # Check if SSL certificate exists
-    if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-        SSL_CONFIG="true"
-    else
-        SSL_CONFIG="false"
-    fi
-    
-    if [ "$SSL_CONFIG" = "true" ]; then
-        # HTTPS configuration
-        NGINX_CONFIG=$(cat <<'EOF'
+    # Create HTTPS configuration with Cloudflare support
+    cat > /etc/nginx/sites-available/default << 'NGINX_CONFIG'
 # ============================================
 # NGINX Configuration for Buku Setaman
 # dengan Cloudflare Support
@@ -309,7 +357,7 @@ limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
 
 # Upstream Node.js application
 upstream nodejs_backend {
-    server 127.0.0.1:3000;
+    server 127.0.0.1:APP_PORT;
     keepalive 32;
 }
 
@@ -339,11 +387,11 @@ server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     
-    server_name boku-setaman.com www.buku-setaman.com;
+    server_name buku-setaman.com www.buku-setaman.com;
     
-    # SSL Certificates (Self-signed untuk Origin)
-    ssl_certificate /etc/nginx/ssl/certificate.crt;
-    ssl_certificate_key /etc/nginx/ssl/private.key;
+    # SSL Certificates (Origin certificates)
+    ssl_certificate CERT_FILE;
+    ssl_certificate_key CERT_KEY;
     
     # SSL Configuration
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -373,7 +421,7 @@ server {
     access_log /var/log/nginx/buku-setaman-access.log cloudflare;
     
     # ============================================
-    # Cloudflare Real IP (Trusted IP List)
+    # Cloudflare Real IP Configuration
     # ============================================
     set_real_ip_from 103.21.244.0/22;
     set_real_ip_from 103.22.200.0/22;
@@ -419,19 +467,7 @@ server {
     gzip_vary on;
     gzip_proxied any;
     gzip_comp_level 6;
-    gzip_types 
-        text/plain 
-        text/css 
-        text/xml 
-        text/javascript 
-        application/json 
-        application/javascript 
-        application/xml+rss 
-        application/rss+xml 
-        font/truetype 
-        font/opentype 
-        application/vnd.ms-fontobject 
-        image/svg+xml;
+    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;
     gzip_min_length 1000;
     gzip_disable "msie6";
     
@@ -498,7 +534,7 @@ server {
     # Public Assets
     # ============================================
     location /public {
-        root /opt/buku-setaman;
+        root APP_DIR;
         expires 30d;
         add_header Cache-Control "public";
     }
@@ -554,79 +590,23 @@ server {
         root /usr/share/nginx/html;
     }
 }
-EOF
-)
-    else
-        # HTTP only configuration (temporary)
-        NGINX_CONFIG=$(cat <<'EOF'
-server {
-    listen 80;
-    listen [::]:80;
-    server_name DOMAIN www.DOMAIN;
-    
-    # Logging
-    access_log /var/log/nginx/buku-setaman-access.log;
-    error_log /var/log/nginx/buku-setaman-error.log;
-    
-    # Client upload size
-    client_max_body_size 10M;
-    
-    # Gzip
-    gzip on;
-    gzip_types text/plain text/css text/javascript application/json application/javascript;
-    gzip_min_length 1000;
-    
-    # Static files
-    location /_next/static {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        proxy_pass http://127.0.0.1:PORT;
-    }
-    
-    # Public assets
-    location /public {
-        alias APP_DIR/public;
-        expires 30d;
-        add_header Cache-Control "public";
-    }
-    
-    # Proxy to Node.js
-    location / {
-        proxy_pass http://127.0.0.1:PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-}
-EOF
-)
-    fi
-    
-    # Replace placeholders
-    NGINX_CONFIG="${NGINX_CONFIG//DOMAIN/$DOMAIN}"
-    NGINX_CONFIG="${NGINX_CONFIG//PORT/$APP_PORT}"
-    NGINX_CONFIG="${NGINX_CONFIG//APP_DIR/$APP_DIR}"
-    
-    # Write config
-    echo "$NGINX_CONFIG" | sudo tee /etc/nginx/sites-available/default > /dev/null
+NGINX_CONFIG
+
+    # Replace placeholders with actual values
+    sed -i "s|APP_PORT|$APP_PORT|g" /etc/nginx/sites-available/default
+    sed -i "s|APP_DIR|$APP_DIR|g" /etc/nginx/sites-available/default
+    sed -i "s|CERT_FILE|$CERT_FILE|g" /etc/nginx/sites-available/default
+    sed -i "s|CERT_KEY|$CERT_KEY|g" /etc/nginx/sites-available/default
     
     # Test config
     log_info "Testing Nginx configuration..."
-    sudo nginx -t
+    nginx -t
     
     # Restart Nginx
     log_info "Restarting Nginx..."
-    sudo systemctl restart nginx
+    systemctl restart nginx
     
-    log_success "Nginx configured successfully"
+    log_success "Nginx configured successfully with Cloudflare support"
     echo ""
 }
 
@@ -636,28 +616,30 @@ EOF
 
 step_setup_pm2() {
     log_info "Step 9: Setting up PM2 (Process Manager)"
-    echo "========================================"
+    log_separator
     
     if check_command pm2; then
         log_warning "PM2 already installed"
     else
         log_info "Installing PM2..."
-        sudo npm install -g pm2
+        npm install -g pm2
     fi
     
     cd $APP_DIR
     
+    log_info "Stopping previous instances..."
+    pm2 delete buku-setaman 2>/dev/null || true
+    
     log_info "Starting application with PM2..."
-    sudo pm2 delete buku-setaman 2>/dev/null || true
-    sudo pm2 start npm --name "buku-setaman" -- start
+    pm2 start npm --name "buku-setaman" -- start
     
     log_info "Setting PM2 to startup on reboot..."
-    sudo pm2 startup systemd -u root --hp /root
-    sudo pm2 save
+    pm2 startup systemd -u root --hp /root
+    pm2 save
     
     log_success "PM2 configured"
-    log_info "Status:"
-    sudo pm2 status
+    log_info "Application status:"
+    pm2 status
     
     echo ""
 }
@@ -668,13 +650,13 @@ step_setup_pm2() {
 
 step_setup_firewall() {
     log_info "Step 10: Setting up Firewall"
-    echo "========================================"
+    log_separator
     
     log_info "Enabling UFW firewall..."
-    sudo ufw allow 22/tcp
-    sudo ufw allow 80/tcp
-    sudo ufw allow 443/tcp
-    sudo ufw --force enable
+    ufw allow 22/tcp 2>/dev/null || true
+    ufw allow 80/tcp 2>/dev/null || true
+    ufw allow 443/tcp 2>/dev/null || true
+    ufw --force enable 2>/dev/null || true
     
     log_success "Firewall configured"
     echo ""
@@ -686,26 +668,26 @@ step_setup_firewall() {
 
 verify_deployment() {
     log_info "Verifying Deployment"
-    echo "========================================"
+    log_separator
     
     log_info "Checking services..."
     
     # Check Nginx
-    if sudo systemctl is-active --quiet nginx; then
+    if systemctl is-active --quiet nginx; then
         log_success "Nginx is running"
     else
         log_error "Nginx is not running"
     fi
     
     # Check Node.js app
-    if sudo pm2 status | grep -q "buku-setaman"; then
+    if pm2 status | grep -q "buku-setaman"; then
         log_success "Node.js app is running"
     else
         log_error "Node.js app is not running"
     fi
     
     # Check port
-    if sudo netstat -tlnp 2>/dev/null | grep -q ":$APP_PORT"; then
+    if netstat -tlnp 2>/dev/null | grep -q ":$APP_PORT" || ss -tlnp 2>/dev/null | grep -q ":$APP_PORT"; then
         log_success "Port $APP_PORT is listening"
     else
         log_error "Port $APP_PORT is not listening"
@@ -715,40 +697,44 @@ verify_deployment() {
 }
 
 show_summary() {
-    log_info "Deployment Summary"
-    echo "========================================"
-    echo ""
-    echo -e "${GREEN}✓ Deployment Complete!${NC}"
+    log_info "🎉 Deployment Complete!"
+    log_separator
     echo ""
     echo "Application Details:"
     echo "  Domain: https://$DOMAIN"
     echo "  IP Address: $IP_ADDRESS"
     echo "  Application Port: $APP_PORT"
     echo "  Application Dir: $APP_DIR"
+    echo "  SSL Certificate: $CERT_FILE"
+    echo "  SSL Private Key: $CERT_KEY"
+    echo ""
+    echo "Cloudflare Configuration:"
+    echo "  ✓ DNS: A record → $IP_ADDRESS (Proxied)"
+    echo "  ✓ SSL/TLS Mode: Full (strict)"
+    echo "  ✓ Always HTTPS: ON"
+    echo "  ✓ Real IP logging: Enabled"
     echo ""
     echo "Useful Commands:"
     echo "  # View logs"
-    echo "  sudo pm2 logs buku-setaman"
+    echo "  pm2 logs buku-setaman"
     echo ""
     echo "  # Check status"
-    echo "  sudo pm2 status"
-    echo ""
-    echo "  # View Nginx logs"
-    echo "  sudo tail -f /var/log/nginx/buku-setaman-error.log"
+    echo "  pm2 status"
     echo ""
     echo "  # Restart application"
-    echo "  sudo pm2 restart buku-setaman"
+    echo "  pm2 restart buku-setaman"
     echo ""
-    echo "Next Steps:"
-    echo "  1. Change admin password in database"
-    echo "  2. Setup backups"
-    echo "  3. Configure email notifications"
+    echo "  # View Nginx logs"
+    echo "  tail -f /var/log/nginx/buku-setaman-access.log"
+    echo "  tail -f /var/log/nginx/buku-setaman-error.log"
     echo ""
-    echo "Default Credentials:"
-    echo "  Email: admin@bukusetaman.com"
-    echo "  Password: buku-setaman-admin-123"
-    echo "  ⚠️  CHANGE THIS IMMEDIATELY!"
+    echo "  # Test HTTPS"
+    echo "  curl -I https://buku-setaman.com"
     echo ""
+    echo "  # Check certificate"
+    echo "  openssl x509 -in $CERT_FILE -text -noout"
+    echo ""
+    log_separator
 }
 
 ################################################################################
@@ -757,18 +743,20 @@ show_summary() {
 
 main() {
     echo ""
-    echo "========================================"
-    echo "🚀 Buku Setaman Automated Deployment"
-    echo "========================================"
+    log_separator
+    echo "🚀 Buku Setaman Automated Deployment (Cloudflare)"
+    log_separator
     echo ""
     log_info "Domain: $DOMAIN"
     log_info "IP Address: $IP_ADDRESS"
+    log_info "Git Repo: $GIT_REPO"
+    log_info "Certificates: $CERT_DIR"
     echo ""
     
     # Check if running as root
     if [ "$EUID" -ne 0 ]; then
         log_error "This script must be run as root"
-        log_info "Run: sudo bash deploy.sh"
+        log_info "Run: sudo bash deploy-cloudflare.sh"
         exit 1
     fi
     
@@ -795,8 +783,6 @@ main() {
     step_setup_firewall
     verify_deployment
     show_summary
-    
-    echo "========================================"
 }
 
 # Run main
