@@ -1,3 +1,6 @@
+// lib/db-service.ts - FIXED VERSION
+// Gunakan bcrypt untuk verify password
+
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import type { User } from './types';
@@ -10,7 +13,45 @@ class DatabaseService {
     this.db.pragma('foreign_keys = ON');
   }
 
-  // User authentication methods
+  // ✅ FIXED: Authenticate with bcrypt password verification
+  async authenticateUser(email: string, password: string): Promise<User | null> {
+    try {
+      console.log(`🔐 Authenticating user: ${email}`);
+      
+      const stmt = this.db.prepare('SELECT * FROM users WHERE email = ?');
+      const user = stmt.get(email) as any;
+
+      if (!user) {
+        console.log(`❌ User not found: ${email}`);
+        return null;
+      }
+
+      console.log(`✓ User found: ${user.name}`);
+
+      // ✅ FIXED: Use bcrypt.compare() instead of plain text comparison
+      const isValidPassword = await bcrypt.compare(password, user.password);
+
+      if (!isValidPassword) {
+        console.log(`❌ Invalid password for user: ${email}`);
+        return null;
+      }
+
+      console.log(`✅ Password verified for user: ${email}`);
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        createdAt: new Date(user.created_at),
+        updatedAt: new Date(user.updated_at),
+      };
+    } catch (error) {
+      console.error('Error authenticating user:', error);
+      return null;
+    }
+  }
+
   async findUserByEmail(email: string): Promise<User | null> {
     try {
       const stmt = this.db.prepare('SELECT * FROM users WHERE email = ?');
@@ -32,45 +73,18 @@ class DatabaseService {
     }
   }
 
-  async authenticateUser(email: string, password: string): Promise<User | null> {
-    try {
-      const stmt = this.db.prepare('SELECT * FROM users WHERE email = ?');
-      const user = stmt.get(email) as any;
-
-      if (!user) return null;
-
-      // For demo purposes, we'll do a simple password comparison
-      // In production, you'd use bcrypt.compare()
-      const isValidPassword = user.password === password;
-
-      if (!isValidPassword) return null;
-
-      return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        createdAt: new Date(user.created_at),
-        updatedAt: new Date(user.updated_at),
-      };
-    } catch (error) {
-      console.error('Error authenticating user:', error);
-      return null;
-    }
-  }
-
-  // Helper method to hash passwords (for future use)
+  // Hash password
   async hashPassword(password: string): Promise<string> {
     const saltRounds = 10;
     return bcrypt.hash(password, saltRounds);
   }
 
-  // Helper method to verify passwords (for future use)
+  // Verify password
   async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
     return bcrypt.compare(password, hashedPassword);
   }
 
-  // Check if user is authenticated based on session cookie
+  // Check if user is authenticated
   async isAuthenticated(sessionEmail?: string): Promise<boolean> {
     try {
       if (!sessionEmail) return false;
@@ -83,7 +97,7 @@ class DatabaseService {
     }
   }
 
-  // Get stories by author ID from database
+  // Get stories by author from database
   async getStoriesByAuthorFromDB(authorId: string): Promise<any[]> {
     try {
       const storiesQuery = `
@@ -95,9 +109,7 @@ class DatabaseService {
 
       const stories = this.db.prepare(storiesQuery).all(authorId) as any[];
 
-      // For each story, fetch related data
       const storiesWithContent = stories.map(story => {
-        // Get story pages for each language
         const pagesQuery = `
           SELECT language, page_number, text, illustration
           FROM story_pages
@@ -107,7 +119,6 @@ class DatabaseService {
 
         const pages = this.db.prepare(pagesQuery).all(story.id) as any[];
 
-        // Group pages by language
         const content: any = {};
         pages.forEach((page: any) => {
           if (!content[page.language]) {
@@ -120,7 +131,6 @@ class DatabaseService {
           });
         });
 
-        // Get illustrations
         const illustrationsQuery = `
           SELECT illustration_url
           FROM story_illustrations
@@ -131,7 +141,6 @@ class DatabaseService {
         const illustrations = this.db.prepare(illustrationsQuery).all(story.id) as any[];
         const illustrationUrls = illustrations.map((ill: any) => ill.illustration_url);
 
-        // Get audio files
         const audioQuery = `
           SELECT language, audio_url
           FROM story_audio_files
@@ -178,9 +187,7 @@ class DatabaseService {
 
       const stories = this.db.prepare(storiesQuery).all(limit) as any[];
 
-      // For each story, fetch related data
       const storiesWithContent = stories.map(story => {
-        // Get story pages for each language
         const pagesQuery = `
           SELECT language, page_number, text, illustration
           FROM story_pages
@@ -190,7 +197,6 @@ class DatabaseService {
 
         const pages = this.db.prepare(pagesQuery).all(story.id) as any[];
 
-        // Group pages by language
         const content: any = {};
         pages.forEach((page: any) => {
           if (!content[page.language]) {
@@ -203,7 +209,6 @@ class DatabaseService {
           });
         });
 
-        // Get illustrations
         const illustrationsQuery = `
           SELECT illustration_url
           FROM story_illustrations
@@ -214,7 +219,6 @@ class DatabaseService {
         const illustrations = this.db.prepare(illustrationsQuery).all(story.id) as any[];
         const illustrationUrls = illustrations.map((ill: any) => ill.illustration_url);
 
-        // Get audio files
         const audioQuery = `
           SELECT language, audio_url
           FROM story_audio_files
