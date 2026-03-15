@@ -1,15 +1,21 @@
 #!/bin/bash
 
 ################################################################################
-# 🚀 Buku Setaman Automated Deployment Script (CLOUDFLARE VERSION)
+# 🚀 Buku Setaman Automated Deployment Script
 # ============================================
 # Server: Ubuntu 22.04.5 LTS
 # IP: 202.74.75.223
 # Domain: buku-setaman.com
 # Certificates: /root/cert/certificate.crt and /root/cert/private.key
 #
-# Usage: sudo bash deploy-cloudflare.sh "https://github.com/username/repo.git"
-# Or: sudo bash deploy-cloudflare.sh
+# IMPROVEMENTS:
+# ✅ Database initialization step added
+# ✅ PM2 start instead of npm run
+# ✅ Proper ecosystem.config.js for PM2
+# ✅ Better error checking
+#
+# Usage: sudo bash deploy.sh "https://github.com/username/repo.git"
+# Or: sudo bash deploy.sh
 ################################################################################
 
 set -e  # Exit on error
@@ -22,30 +28,27 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 ################################################################################
-# CONFIGURATION - EDIT HERE IF NEEDED
+# CONFIGURATION
 ################################################################################
 
-# Git Repository URL - bisa juga di-pass sebagai argument
+# Git Repository URL
 if [ -z "$1" ]; then
-    # Gunakan default atau tanya user
     GIT_REPO="${GIT_REPO:-}"
-    
-    # Jika masih kosong, tanya user
     if [ -z "$GIT_REPO" ]; then
         echo -e "${BLUE}[?]${NC} Git Repository URL not provided"
-        read -p "Enter your Git repository URL (e.g., https://github.com/username/buku-setaman.git): " GIT_REPO
+        read -p "Enter your Git repository URL: " GIT_REPO
     fi
 else
-    # Gunakan argument pertama
     GIT_REPO="$1"
 fi
 
-# Domain & Server Configuration
+# Server Configuration
 DOMAIN="buku-setaman.com"
 IP_ADDRESS="202.74.75.223"
-APP_DIR="/opt/buku-setaman"
+APP_DIR="/var/www/bukusetaman"
 APP_PORT="3000"
 APP_USER="root"
+NGINX_CONFIG_DIR="/etc/nginx/ssl"
 
 # Certificate paths
 CERT_DIR="/home/admin-buku-setaman"
@@ -157,7 +160,6 @@ step_setup_app_directory() {
     log_info "Step 3: Setting up Application Directory"
     log_separator
     
-    # Validate Git repo URL
     if [ -z "$GIT_REPO" ]; then
         log_error "GIT_REPO is empty!"
         exit 1
@@ -196,6 +198,13 @@ step_build_application() {
     
     cd $APP_DIR
     
+    log_info "Fixing package.json (jsonwebtoken version compatibility)..."
+    # Fix invalid jsonwebtoken versions
+    sed -i 's/"jsonwebtoken": "\^9.1.2"/"jsonwebtoken": "^9.0.2"/g' package.json
+    sed -i 's/"jsonwebtoken": "9.1.2"/"jsonwebtoken": "^9.0.2"/g' package.json
+    sed -i 's/"jsonwebtoken": "9.1.0"/"jsonwebtoken": "^9.0.2"/g' package.json
+    log_success "package.json fixed"
+    
     log_info "Installing NPM dependencies..."
     npm install --legacy-peer-deps
     
@@ -203,6 +212,62 @@ step_build_application() {
     npm run build
     
     log_success "Application built successfully"
+    echo ""
+}
+
+################################################################################
+# Step 4.5: Initialize Database (NEW)
+################################################################################
+
+step_init_database() {
+    log_info "Step 4.5: Initializing Database"
+    log_separator
+    
+    cd $APP_DIR
+    
+    # Check if database already exists
+    if [ -f "bukusetaman.db" ]; then
+        log_warning "Database already exists: $APP_DIR/bukusetaman.db"
+        read -p "Reinitialize database? This will clear all data. (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Keeping existing database"
+            echo ""
+            return
+        fi
+        log_info "Removing existing database..."
+        rm -f bukusetaman.db
+    fi
+    
+    log_info "Running database initialization..."
+    if npm run init-db; then
+        log_success "Database initialization completed"
+    else
+        log_error "Database initialization failed!"
+        exit 1
+    fi
+    
+    # Verify database was created
+    if [ -f "bukusetaman.db" ]; then
+        DB_SIZE=$(du -h bukusetaman.db | cut -f1)
+        log_success "Database created successfully (size: $DB_SIZE)"
+        
+        # Verify users
+        USER_COUNT=$(sqlite3 bukusetaman.db "SELECT COUNT(*) FROM users;" 2>/dev/null || echo "0")
+        log_info "Users in database: $USER_COUNT"
+        
+        # Verify stories
+        STORY_COUNT=$(sqlite3 bukusetaman.db "SELECT COUNT(*) FROM stories;" 2>/dev/null || echo "0")
+        log_info "Stories in database: $STORY_COUNT"
+        
+        # Set proper permissions
+        chmod 644 bukusetaman.db
+        chown $APP_USER:$APP_USER bukusetaman.db
+    else
+        log_error "Database file not created!"
+        exit 1
+    fi
+    
     echo ""
 }
 
@@ -236,6 +301,7 @@ step_setup_env() {
     cat > $ENV_FILE << EOF
 # Database
 DATABASE_URL="file:./bukusetaman.db"
+DATABASE_PATH="$APP_DIR/bukusetaman.db"
 
 # NextAuth Configuration
 NEXTAUTH_URL="https://$DOMAIN"
@@ -244,7 +310,7 @@ JWT_SECRET="$JWT_SECRET"
 
 # Upload Configuration
 UPLOAD_DIR="public/uploads"
-MAX_FILE_SIZE="10485760"
+MAX_FILE_SIZE="52428800"
 
 # Node Environment
 NODE_ENV="production"
@@ -273,125 +339,153 @@ step_create_upload_dirs() {
     
     log_info "Creating upload directories..."
     mkdir -p $APP_DIR/public/uploads/{covers,illustrations,audio,modules}
-    mkdir -p $APP_DIR/backups
     
     log_info "Setting permissions..."
     chmod -R 755 $APP_DIR/public/uploads
-    chmod -R 755 $APP_DIR/backups
+    chown -R $APP_USER:$APP_USER $APP_DIR/public/uploads
     
     log_success "Upload directories created"
     echo ""
 }
 
 ################################################################################
-# Step 7: Verify SSL Certificates
+# Step 6.5: Create PM2 Ecosystem Config (NEW)
 ################################################################################
 
-step_setup_ssl() {
-    log_info "Step 7: Verifying SSL Certificates"
+step_create_pm2_config() {
+    log_info "Step 6.5: Creating PM2 Ecosystem Configuration"
     log_separator
     
-    # Check if certificates exist
-    if [ -f "$CERT_FILE" ] && [ -f "$CERT_KEY" ]; then
-        log_success "Origin certificates found!"
-        log_info "Certificate: $CERT_FILE"
-        log_info "Private Key: $CERT_KEY"
-        
-        # Verify certificate permissions
-        log_info "Setting certificate permissions..."
-        chmod 644 $CERT_FILE
-        chmod 600 $CERT_KEY
-        
-        log_success "SSL certificates verified"
-        echo ""
-        return
-    fi
+    log_info "Creating ecosystem.config.js..."
     
-    # Create certificate directory if not exists
-    log_warning "Certificates not found in $CERT_DIR"
-    log_info "Creating self-signed certificate..."
+    cat > $APP_DIR/ecosystem.config.js << 'PM2_CONFIG'
+module.exports = {
+  apps: [
+    {
+      name: 'buku-setaman',
+      script: './node_modules/.bin/next',
+      args: 'start',
+      instances: 'max',
+      exec_mode: 'cluster',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3000,
+      },
+      max_memory_restart: '1G',
+      error_file: '/var/log/pm2/buku-setaman-error.log',
+      out_file: '/var/log/pm2/buku-setaman-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      watch: false,
+      ignore_watch: [
+        'node_modules',
+        '.next',
+        'public/uploads',
+        'bukusetaman.db*'
+      ],
+      max_restarts: 10,
+      min_uptime: '10s',
+      listen_timeout: 3000,
+      kill_timeout: 5000,
+    }
+  ]
+};
+PM2_CONFIG
+
+    chmod 644 $APP_DIR/ecosystem.config.js
+    chown $APP_USER:$APP_USER $APP_DIR/ecosystem.config.js
     
-    mkdir -p $CERT_DIR
-    
-    # Generate self-signed certificate
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-      -keyout $CERT_KEY \
-      -out $CERT_FILE \
-      -subj "/C=ID/ST=Jakarta/L=Jakarta/O=Buku Setaman/CN=$DOMAIN"
-    
-    # Set permissions
-    chmod 644 $CERT_FILE
-    chmod 600 $CERT_KEY
-    
-    log_success "Self-signed certificate created"
-    log_info "Certificate: $CERT_FILE"
-    log_info "Private Key: $CERT_KEY"
+    log_success "PM2 ecosystem config created"
+    log_info "File: $APP_DIR/ecosystem.config.js"
     echo ""
 }
 
 ################################################################################
-# Step 8: Configure Nginx with Cloudflare Support
+# Step 7: Setup SSL Certificates
+################################################################################
+
+step_setup_ssl() {
+    log_info "Step 7: Setting up SSL Certificates"
+    log_separator
+    
+    # Create nginx SSL directory
+    mkdir -p $NGINX_CONFIG_DIR
+    
+    # Check if certificates exist in root home
+    if [ -f "$CERT_FILE" ] && [ -f "$CERT_KEY" ]; then
+        log_success "Origin certificates found in $CERT_DIR"
+        log_info "Certificate: $CERT_FILE"
+        log_info "Private Key: $CERT_KEY"
+        
+        log_info "Copying certificates to $NGINX_CONFIG_DIR..."
+        cp $CERT_FILE $NGINX_CONFIG_DIR/certificate.crt
+        cp $CERT_KEY $NGINX_CONFIG_DIR/private.key
+        
+        log_info "Setting certificate permissions..."
+        chmod 644 $NGINX_CONFIG_DIR/certificate.crt
+        chmod 600 $NGINX_CONFIG_DIR/private.key
+        
+        log_success "SSL certificates ready"
+        echo ""
+        return
+    fi
+    
+    # Create self-signed certificate if not found
+    log_warning "Origin certificates not found in $CERT_DIR"
+    log_info "Creating self-signed certificate..."
+    
+    mkdir -p $NGINX_CONFIG_DIR
+    
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout $NGINX_CONFIG_DIR/private.key \
+      -out $NGINX_CONFIG_DIR/certificate.crt \
+      -subj "/C=ID/ST=Jakarta/L=Jakarta/O=Buku Setaman/CN=$DOMAIN"
+    
+    chmod 644 $NGINX_CONFIG_DIR/certificate.crt
+    chmod 600 $NGINX_CONFIG_DIR/private.key
+    
+    log_success "Self-signed certificate created"
+    log_info "Certificate: $NGINX_CONFIG_DIR/certificate.crt"
+    log_info "Private Key: $NGINX_CONFIG_DIR/private.key"
+    echo ""
+}
+
+################################################################################
+# Step 8: Configure Nginx
 ################################################################################
 
 step_configure_nginx() {
-    log_info "Step 8: Configuring Nginx (Cloudflare)"
+    log_info "Step 8: Configuring Nginx"
     log_separator
     
     log_info "Backing up default Nginx config..."
     cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.backup.$(date +%s)
     
-    log_info "Creating Nginx configuration with Cloudflare support..."
+    log_info "Creating Nginx configuration..."
     
-    # Create HTTPS configuration with Cloudflare support
     cat > /etc/nginx/sites-available/default << 'NGINX_CONFIG'
-# ============================================
-# NGINX Configuration for Buku Setaman
-# dengan Cloudflare Support
-# Domain: buku-setaman.com
-# IP: 202.74.75.223
-# ============================================
-
-# Rate limiting zones
-limit_req_zone $binary_remote_addr zone=general:10m rate=10r/s;
-limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
-
-# Upstream Node.js application
-upstream nodejs_backend {
-    server 127.0.0.1:APP_PORT;
-    keepalive 32;
+upstream bukusetaman_backend {
+    server 127.0.0.1:3000;
+    keepalive 64;
 }
 
-# ============================================
-# HTTP Server - Redirect ke HTTPS
-# ============================================
+# Redirect HTTP to HTTPS
 server {
     listen 80;
     listen [::]:80;
     server_name buku-setaman.com www.buku-setaman.com;
-    
-    # Allow Let's Encrypt & Cloudflare validation
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-    
-    # Redirect semua ke HTTPS
-    location / {
-        return 301 https://$server_name$request_uri;
-    }
+    return 301 https://$server_name$request_uri;
 }
 
-# ============================================
-# HTTPS Server
-# ============================================
+# HTTPS server with Cloudflare origin certificate
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    
     server_name buku-setaman.com www.buku-setaman.com;
     
-    # SSL Certificates (Origin certificates)
-    ssl_certificate CERT_FILE;
-    ssl_certificate_key CERT_KEY;
+    # Cloudflare Origin Certificate and Private Key
+    ssl_certificate /etc/nginx/ssl/certificate.crt;
+    ssl_certificate_key /etc/nginx/ssl/private.key;
     
     # SSL Configuration
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -399,159 +493,53 @@ server {
     ssl_prefer_server_ciphers on;
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 10m;
-    ssl_session_tickets off;
     
-    # OCSP Stapling
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    resolver 1.1.1.1 1.0.0.1 valid=300s;
-    resolver_timeout 5s;
+    client_max_body_size 50M;
     
-    # ============================================
-    # Logging
-    # ============================================
-    access_log /var/log/nginx/buku-setaman-access.log;
-    error_log /var/log/nginx/buku-setaman-error.log;
-    
-    log_format cloudflare '$remote_addr - $http_cf_connecting_ip [$time_local] '
-                         '"$request" $status $body_bytes_sent '
-                         '"$http_referer" "$http_user_agent" '
-                         'CF-RAY: $http_cf_ray';
-    
-    access_log /var/log/nginx/buku-setaman-access.log cloudflare;
-    
-    # ============================================
-    # Cloudflare Real IP Configuration
-    # ============================================
-    set_real_ip_from 103.21.244.0/22;
-    set_real_ip_from 103.22.200.0/22;
-    set_real_ip_from 103.31.4.0/22;
-    set_real_ip_from 104.16.0.0/13;
-    set_real_ip_from 104.24.0.0/14;
-    set_real_ip_from 108.162.192.0/18;
-    set_real_ip_from 131.0.72.0/22;
-    set_real_ip_from 141.101.64.0/18;
-    set_real_ip_from 162.158.0.0/15;
-    set_real_ip_from 172.64.0.0/13;
-    set_real_ip_from 173.245.48.0/20;
-    set_real_ip_from 188.114.96.0/20;
-    set_real_ip_from 190.93.240.0/20;
-    set_real_ip_from 197.234.240.0/22;
-    set_real_ip_from 198.41.128.0/17;
-    set_real_ip_from 199.27.128.0/21;
-    set_real_ip_from 2400:cb00::/32;
-    set_real_ip_from 2606:4700::/32;
-    set_real_ip_from 2803:f800::/32;
-    set_real_ip_from 2405:b500::/32;
-    set_real_ip_from 2405:8100::/32;
-    set_real_ip_from 2a06:98c0::/29;
-    set_real_ip_from 2c0f:f248::/32;
-    
-    real_ip_header CF-Connecting-IP;
-    
-    # ============================================
-    # Security Headers
-    # ============================================
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-    add_header CF-Cache-Tag "buku-setaman" always;
-    
-    # ============================================
-    # Gzip Compression
-    # ============================================
+    # Gzip compression
     gzip on;
-    gzip_vary on;
-    gzip_proxied any;
-    gzip_comp_level 6;
-    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss application/rss+xml font/truetype font/opentype application/vnd.ms-fontobject image/svg+xml;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
     gzip_min_length 1000;
     gzip_disable "msie6";
     
-    # ============================================
-    # Client Configuration
-    # ============================================
-    client_max_body_size 10M;
-    client_body_timeout 60s;
-    client_header_timeout 60s;
-    keepalive_timeout 65s;
+    # Security Headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
     
-    # ============================================
-    # Rate Limiting
-    # ============================================
-    limit_req zone=general burst=20 nodelay;
+    # Logging
+    access_log /var/log/nginx/buku-setaman-access.log;
+    error_log /var/log/nginx/buku-setaman-error.log;
     
-    # ============================================
-    # Static Files Caching
-    # ============================================
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg|woff|woff2|ttf|eot)$ {
-        expires 365d;
+    # Cache static files
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        proxy_pass http://bukusetaman_backend;
+        proxy_cache_valid 200 30d;
+        proxy_cache_bypass $http_pragma $http_authorization;
         add_header Cache-Control "public, immutable";
-        add_header X-Content-Type-Options "nosniff";
-        proxy_pass http://nodejs_backend;
-        proxy_cache_bypass $http_upgrade;
+        expires 30d;
     }
     
-    # Next.js Static Files
-    location /_next/static {
-        expires 365d;
-        add_header Cache-Control "public, immutable";
-        proxy_pass http://nodejs_backend;
-        proxy_cache_bypass $http_upgrade;
-    }
-    
-    # ============================================
-    # API Endpoints (No Cache)
-    # ============================================
-    location ~ ^/api/ {
-        limit_req zone=api burst=50 nodelay;
-        proxy_pass http://nodejs_backend;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $server_name;
-        
-        # Cloudflare Headers
-        proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
-        proxy_set_header CF-Ray $http_cf_ray;
-        proxy_set_header CF-IPCountry $http_cf_ipcountry;
-        proxy_set_header CF-Visitor $http_cf_visitor;
-        
-        proxy_cache_bypass $http_upgrade;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-    
-    # ============================================
-    # Public Assets
-    # ============================================
-    location /public {
-        root APP_DIR;
+    # Uploads directory - serve directly
+    location /uploads/ {
+        alias /var/www/bukusetaman/public/uploads/;
         expires 30d;
         add_header Cache-Control "public";
     }
     
-    # ============================================
-    # Health Check
-    # ============================================
-    location /health {
-        proxy_pass http://nodejs_backend;
+    # Health check endpoint (no rate limit)
+    location /api/health {
+        proxy_pass http://bukusetaman_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
         access_log off;
     }
     
-    # ============================================
-    # Main Proxy
-    # ============================================
+    # Everything else goes to Next.js
     location / {
-        proxy_pass http://nodejs_backend;
+        proxy_pass http://bukusetaman_backend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -559,65 +547,38 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $server_name;
-        proxy_set_header X-Forwarded-Port $server_port;
-        
-        # Cloudflare Headers
-        proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
-        proxy_set_header CF-Ray $http_cf_ray;
-        proxy_set_header CF-IPCountry $http_cf_ipcountry;
-        proxy_set_header CF-Visitor $http_cf_visitor;
-        proxy_set_header CF-Request-ID $http_cf_request_id;
-        
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-        proxy_buffering on;
-        proxy_buffer_size 4k;
-        proxy_buffers 8 4k;
-        proxy_busy_buffers_size 8k;
         proxy_cache_bypass $http_upgrade;
-        proxy_no_cache $http_pragma $http_authorization;
-    }
-    
-    # ============================================
-    # Error Pages
-    # ============================================
-    error_page 404 /404.html;
-    error_page 500 502 503 504 /50x.html;
-    
-    location = /50x.html {
-        root /usr/share/nginx/html;
+        proxy_buffering off;
     }
 }
 NGINX_CONFIG
 
-    # Replace placeholders with actual values
-    sed -i "s|APP_PORT|$APP_PORT|g" /etc/nginx/sites-available/default
-    sed -i "s|APP_DIR|$APP_DIR|g" /etc/nginx/sites-available/default
-    sed -i "s|CERT_FILE|$CERT_FILE|g" /etc/nginx/sites-available/default
-    sed -i "s|CERT_KEY|$CERT_KEY|g" /etc/nginx/sites-available/default
-    
-    # Test config
+    # Test nginx configuration
     log_info "Testing Nginx configuration..."
     nginx -t
+    
+    if [ $? -ne 0 ]; then
+        log_error "Nginx configuration test failed!"
+        exit 1
+    fi
     
     # Restart Nginx
     log_info "Restarting Nginx..."
     systemctl restart nginx
     
-    log_success "Nginx configured successfully with Cloudflare support"
+    log_success "Nginx configured successfully"
     echo ""
 }
 
 ################################################################################
-# Step 9: Install & Start PM2
+# Step 9: Install PM2 & Configure Startup
 ################################################################################
 
 step_setup_pm2() {
     log_info "Step 9: Setting up PM2 (Process Manager)"
     log_separator
     
+    # Install PM2 globally if not already installed
     if check_command pm2; then
         log_warning "PM2 already installed"
     else
@@ -625,20 +586,33 @@ step_setup_pm2() {
         npm install -g pm2
     fi
     
+    # Ensure PM2 log directory exists
+    mkdir -p /var/log/pm2
+    chmod 755 /var/log/pm2
+    
     cd $APP_DIR
     
-    log_info "Stopping previous instances..."
+    log_info "Stopping and deleting previous instances..."
     pm2 delete buku-setaman 2>/dev/null || true
+    pm2 delete all 2>/dev/null || true
     
-    log_info "Starting application with PM2..."
-    pm2 start npm --name "buku-setaman" -- start
+    log_info "Starting application with PM2 using ecosystem config..."
+    pm2 start ecosystem.config.js
+    
+    if [ $? -ne 0 ]; then
+        log_error "Failed to start application with PM2!"
+        exit 1
+    fi
+    
+    log_success "Application started with PM2"
     
     log_info "Setting PM2 to startup on reboot..."
     pm2 startup systemd -u root --hp /root
     pm2 save
     
-    log_success "PM2 configured"
-    log_info "Application status:"
+    # Verify application is running
+    sleep 2
+    log_info "Checking application status..."
     pm2 status
     
     echo ""
@@ -679,18 +653,27 @@ verify_deployment() {
         log_error "Nginx is not running"
     fi
     
-    # Check Node.js app
-    if pm2 status | grep -q "buku-setaman"; then
-        log_success "Node.js app is running"
+    # Check Node.js app via PM2
+    if pm2 status | grep -q "buku-setaman.*online"; then
+        log_success "Node.js app is running (PM2)"
     else
-        log_error "Node.js app is not running"
+        log_error "Node.js app is not running via PM2"
     fi
     
     # Check port
-    if netstat -tlnp 2>/dev/null | grep -q ":$APP_PORT" || ss -tlnp 2>/dev/null | grep -q ":$APP_PORT"; then
-        log_success "Port $APP_PORT is listening"
+    if netstat -tlnp 2>/dev/null | grep -q ":3000" || ss -tlnp 2>/dev/null | grep -q ":3000"; then
+        log_success "Port 3000 is listening"
     else
-        log_error "Port $APP_PORT is not listening"
+        log_error "Port 3000 is not listening"
+    fi
+    
+    # Check database
+    if [ -f "$APP_DIR/bukusetaman.db" ]; then
+        log_success "Database file exists"
+        DB_SIZE=$(du -h "$APP_DIR/bukusetaman.db" | cut -f1)
+        log_info "Database size: $DB_SIZE"
+    else
+        log_error "Database file not found!"
     fi
     
     echo ""
@@ -703,36 +686,50 @@ show_summary() {
     echo "Application Details:"
     echo "  Domain: https://$DOMAIN"
     echo "  IP Address: $IP_ADDRESS"
-    echo "  Application Port: $APP_PORT"
+    echo "  Application Port: 3000 (internal, via PM2)"
+    echo "  Public Port: 443 (HTTPS via Nginx)"
     echo "  Application Dir: $APP_DIR"
-    echo "  SSL Certificate: $CERT_FILE"
-    echo "  SSL Private Key: $CERT_KEY"
+    echo "  Database: $APP_DIR/bukusetaman.db"
+    echo "  SSL Certificate: $NGINX_CONFIG_DIR/certificate.crt"
+    echo "  SSL Private Key: $NGINX_CONFIG_DIR/private.key"
     echo ""
-    echo "Cloudflare Configuration:"
-    echo "  ✓ DNS: A record → $IP_ADDRESS (Proxied)"
-    echo "  ✓ SSL/TLS Mode: Full (strict)"
-    echo "  ✓ Always HTTPS: ON"
-    echo "  ✓ Real IP logging: Enabled"
+    echo "🔑 Default Admin Credentials:"
+    echo "  Email: admin@bukusetaman.com"
+    echo "  Password: buku-setaman-admin-123"
     echo ""
-    echo "Useful Commands:"
-    echo "  # View logs"
+    echo "⚠️  CHANGE ADMIN PASSWORD IMMEDIATELY!"
+    echo ""
+    echo "📊 Useful Commands:"
+    echo ""
+    echo "  # View app logs (real-time)"
     echo "  pm2 logs buku-setaman"
     echo ""
-    echo "  # Check status"
+    echo "  # View app logs (last 100 lines)"
+    echo "  pm2 logs buku-setaman --lines 100"
+    echo ""
+    echo "  # Check PM2 status"
     echo "  pm2 status"
     echo ""
     echo "  # Restart application"
     echo "  pm2 restart buku-setaman"
     echo ""
-    echo "  # View Nginx logs"
+    echo "  # Stop application"
+    echo "  pm2 stop buku-setaman"
+    echo ""
+    echo "  # View Nginx access logs"
     echo "  tail -f /var/log/nginx/buku-setaman-access.log"
+    echo ""
+    echo "  # View Nginx error logs"
     echo "  tail -f /var/log/nginx/buku-setaman-error.log"
     echo ""
-    echo "  # Test HTTPS"
-    echo "  curl -I https://buku-setaman.com"
+    echo "  # Check health status"
+    echo "  curl https://buku-setaman.com/api/health"
     echo ""
-    echo "  # Check certificate"
-    echo "  openssl x509 -in $CERT_FILE -text -noout"
+    echo "  # Database info"
+    echo "  sqlite3 $APP_DIR/bukusetaman.db 'SELECT COUNT(*) as users FROM users;'"
+    echo ""
+    echo "  # Verify certificate"
+    echo "  openssl x509 -in $NGINX_CONFIG_DIR/certificate.crt -text -noout"
     echo ""
     log_separator
 }
@@ -744,19 +741,19 @@ show_summary() {
 main() {
     echo ""
     log_separator
-    echo "🚀 Buku Setaman Automated Deployment (Cloudflare)"
+    echo "🚀 Buku Setaman Automated Deployment"
     log_separator
     echo ""
     log_info "Domain: $DOMAIN"
     log_info "IP Address: $IP_ADDRESS"
     log_info "Git Repo: $GIT_REPO"
-    log_info "Certificates: $CERT_DIR"
+    log_info "App Directory: $APP_DIR"
     echo ""
     
     # Check if running as root
     if [ "$EUID" -ne 0 ]; then
         log_error "This script must be run as root"
-        log_info "Run: sudo bash deploy-cloudflare.sh"
+        log_info "Run: sudo bash deploy.sh"
         exit 1
     fi
     
@@ -770,16 +767,18 @@ main() {
     
     echo ""
     
-    # Run all steps
+    # Run all steps in order
     step_system_update
     step_install_dependencies
     step_setup_app_directory
     step_build_application
+    step_init_database              # ✅ NEW: Database initialization
     step_setup_env
     step_create_upload_dirs
+    step_create_pm2_config          # ✅ NEW: PM2 ecosystem config
     step_setup_ssl
     step_configure_nginx
-    step_setup_pm2
+    step_setup_pm2                  # ✅ UPDATED: Uses ecosystem.config.js
     step_setup_firewall
     verify_deployment
     show_summary
