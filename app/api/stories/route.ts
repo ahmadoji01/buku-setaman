@@ -1,37 +1,8 @@
-// app/api/stories/route.ts - UPDATED VERSION
+// app/api/stories/route.ts - UPDATED dengan imgcdn.dev CDN
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getDatabaseService } from '@/lib/db-service';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { existsSync } from 'fs';
-
-const UPLOAD_DIR = process.env.UPLOAD_DIR || 'public/uploads';
-
-async function ensureUploadDir(subDir: string) {
-  const dirPath = join(UPLOAD_DIR, subDir);
-  if (!existsSync(dirPath)) {
-    await mkdir(dirPath, { recursive: true });
-  }
-}
-
-function generateFileId() {
-  return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-async function handleFileUpload(file: File, subDir: string): Promise<string> {
-  await ensureUploadDir(subDir);
-
-  const buffer = await file.arrayBuffer();
-  const fileId = generateFileId();
-  const ext = file.name.split('.').pop() || 'bin';
-  const fileName = `${fileId}.${ext}`;
-  const filePath = join(UPLOAD_DIR, subDir, fileName);
-
-  await writeFile(filePath, Buffer.from(buffer));
-
-  return `/uploads/${subDir}/${fileName}`;
-}
+import { uploadImageToCDN } from '@/lib/imgcdn-service';
 
 export async function GET(request: NextRequest) {
   try {
@@ -212,14 +183,17 @@ export async function POST(request: NextRequest) {
     const dbService = getDatabaseService();
     const storyId = `story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    let coverImagePath = null;
+    // Upload cover image ke imgcdn.dev
+    let coverImageUrl = null;
     const coverImageFile = formData.get('coverImage') as File | null;
     if (coverImageFile && coverImageFile.size > 0) {
       try {
-        coverImagePath = await handleFileUpload(coverImageFile, 'covers');
+        const cdnResult = await uploadImageToCDN(coverImageFile);
+        coverImageUrl = cdnResult.url;
+        console.log('Cover image uploaded to CDN:', coverImageUrl);
       } catch (error) {
         return NextResponse.json(
-          { error: 'Failed to upload cover image: ' + (error instanceof Error ? error.message : 'Unknown error') },
+          { error: 'Failed to upload cover image to CDN: ' + (error instanceof Error ? error.message : 'Unknown error') },
           { status: 400 }
         );
       }
@@ -244,7 +218,7 @@ export async function POST(request: NextRequest) {
       dbService.run(insertStoryQuery, [
         storyId,
         title,
-        coverImagePath,
+        coverImageUrl,
         authorId,
         authorName,
         isPublished ? 1 : 0,
@@ -269,9 +243,9 @@ export async function POST(request: NextRequest) {
 
     const languages = ['indonesian', 'sundanese', 'english'] as const;
 
-    // Track which illustrations we've already handled
+    // Track illustrations yang sudah di-upload (shared per page)
     const handledIllustrations = new Set<number>();
-    const illusts:Record<number, string> = {};
+    const illusts: Record<number, string> = {};
 
     for (const language of languages) {
       const pages = content[language];
@@ -282,27 +256,29 @@ export async function POST(request: NextRequest) {
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
         const page = pages[pageIndex];
 
-        // Shared illustration (only upload once, for indonesian)
-        let illustrationPath = null;
+        // Upload ilustrasi (hanya sekali, untuk bahasa Indonesian)
+        let illustrationUrl = null;
         if (!handledIllustrations.has(pageIndex) && language === 'indonesian') {
           const illustrationKey = `illustration_${pageIndex}`;
           const illustrationFile = formData.get(illustrationKey) as File | null;
 
           if (illustrationFile && illustrationFile.size > 0) {
             try {
-              illustrationPath = await handleFileUpload(illustrationFile, 'illustrations');
+              const cdnResult = await uploadImageToCDN(illustrationFile);
+              illustrationUrl = cdnResult.url;
               handledIllustrations.add(pageIndex);
-              illusts[pageIndex] = illustrationPath;
+              illusts[pageIndex] = illustrationUrl;
+              console.log(`Illustration page ${pageIndex} uploaded to CDN:`, illustrationUrl);
             } catch (error) {
               return NextResponse.json(
-                { error: `Failed to upload illustration for page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
+                { error: `Failed to upload illustration for page ${pageIndex + 1} to CDN: ${error instanceof Error ? error.message : 'Unknown error'}` },
                 { status: 400 }
               );
             }
           }
         } else if (handledIllustrations.has(pageIndex) && language !== 'indonesian') {
           if (illusts[pageIndex]) {
-            illustrationPath = illusts[pageIndex];
+            illustrationUrl = illusts[pageIndex];
           }
         }
 
@@ -312,7 +288,7 @@ export async function POST(request: NextRequest) {
             language,
             pageIndex + 1,
             page.text || '',
-            illustrationPath
+            illustrationUrl
           ]);
         } catch (error) {
           return NextResponse.json(
@@ -321,44 +297,53 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Handle per-language audio
+        // Handle per-language audio (simpan lokal karena audio tidak didukung imgcdn)
         const audioKey = `audio_${language}_${pageIndex}`;
         const audioFile = formData.get(audioKey) as File | null;
 
         if (audioFile && audioFile.size > 0) {
+          // Audio tetap disimpan lokal
+          const { writeFile, mkdir } = await import('fs/promises');
+          const { join } = await import('path');
+          const { existsSync } = await import('fs');
+
+          const UPLOAD_DIR = process.env.UPLOAD_DIR || 'public/uploads';
+          const audioDirPath = join(UPLOAD_DIR, 'audio');
+          if (!existsSync(audioDirPath)) {
+            await mkdir(audioDirPath, { recursive: true });
+          }
+
+          const buffer = await audioFile.arrayBuffer();
+          const fileId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const ext = audioFile.name.split('.').pop() || 'mp3';
+          const fileName = `${fileId}.${ext}`;
+          const filePath = join(UPLOAD_DIR, 'audio', fileName);
+          await writeFile(filePath, Buffer.from(buffer));
+          const audioPath = `/uploads/audio/${fileName}`;
+
           try {
-            const audioPath = await handleFileUpload(audioFile, 'audio');
-            try {
-              dbService.run(insertPageAudioQuery, [
-                storyId,
-                pageIndex + 1,
-                language,
-                audioPath
-              ]);
-            } catch (error) {
-              return NextResponse.json(
-                { error: `Failed to save audio for ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
-                { status: 500 }
-              );
-            }
+            dbService.run(insertPageAudioQuery, [
+              storyId,
+              pageIndex + 1,
+              language,
+              audioPath
+            ]);
           } catch (error) {
             return NextResponse.json(
-              { error: `Failed to upload audio for ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
-              { status: 400 }
+              { error: `Failed to save audio for ${language} page ${pageIndex + 1}: ${error instanceof Error ? error.message : 'Unknown error'}` },
+              { status: 500 }
             );
           }
         }
       }
     }
 
-    // Clear cache after successful upload
+    // Clear cache
     try {
       revalidatePath('/dashboard');
-      revalidatePath('/dashboard/create');
       revalidatePath('/stories');
       revalidatePath(`/stories/${storyId}`);
       revalidatePath(`/api/stories`);
-      revalidatePath(`/api/stories/${storyId}`);
     } catch (error) {
       console.error('Cache revalidation error:', error);
     }
@@ -366,7 +351,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       storyId,
-      message: 'Story created successfully with all files'
+      message: 'Story created successfully with CDN images'
     }, { status: 201 });
 
   } catch (error) {

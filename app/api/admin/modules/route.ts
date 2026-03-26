@@ -1,3 +1,6 @@
+// app/api/admin/modules/route.ts - UPDATED dengan imgcdn.dev CDN
+// Catatan: modules hanya menyimpan file PPT/PDF (bukan gambar), jadi tetap lokal
+// Hanya cover image yang di-upload ke CDN bila ada
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabaseService } from '@/lib/db-service';
 import { writeFile, mkdir } from 'fs/promises';
@@ -45,6 +48,7 @@ function generateFileId() {
   return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// File PPT/PDF tetap lokal karena imgcdn.dev hanya support gambar
 async function handleFileUpload(file: File, subDir: string): Promise<string> {
   await ensureUploadDir(subDir);
 
@@ -147,6 +151,7 @@ export async function POST(request: NextRequest) {
     const dbService = getDatabaseService();
     const moduleId = `module_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+    // PPT/PDF file tetap lokal (bukan gambar)
     let fileUrl = null;
     if (type === 'ppt' || type === 'pdf') {
       const file = formData.get('file') as File;
